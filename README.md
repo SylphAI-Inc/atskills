@@ -1,6 +1,6 @@
 # AgentWorkflows
 
-An open protocol for on-demand agent instructions. A workflow is fetched, loaded into an agent's context for the duration of a task, and discarded — no installation step, no persistent footprint.
+Workflows are a lightweight protocol built on top of the existing Skills format (SKILL.md). Same file, simpler lifecycle — no install, no system prompt footprint, load on demand, gone after. Designed to make agent instructions accessible to everyone, not just technical users.
 
 ## What is a Workflow?
 
