@@ -1,6 +1,6 @@
 # AgentWorkflows
 
-**Stop installing. Start using.** Fetch a workflow, hand it to your agent, gone when you're done. One command, zero footprint.
+An open protocol for on-demand agent instructions. A workflow is fetched, loaded into an agent's context for the duration of a task, and discarded — no installation step, no persistent footprint.
 
 ## What is a Workflow?
 
