@@ -135,18 +135,19 @@ Three ways an agent (or AdaL) can load a workflow, depending on how much context
 | **Index mode** | `@workflow:<id>:index` | Only the YAML frontmatter (`name` + `description`) is injected — the agent reads the full `SKILL.md` on-demand later if it decides the workflow is actually relevant. Useful for previewing many workflows cheaply. |
 | **Saved mode** | `@workflow:<id>:save` | Full directory is downloaded AND persisted to the project's `.workflows/<id>/` for reuse across sessions (git-tracked, permanent, offline-available afterward) |
 
-## Minimal Integration (5 minutes)
+## Minimum Integration: None Required
 
-For an agent builder who just wants instructions in context, no directory handling required:
+You don't need to write any integration code at all. It works the same way installing a skill does — fetch a `SKILL.md`, drop it where the agent can read it, done — except there's no install step: it's ephemeral, not added to the agent's permanent skill set. If you're using an existing coding agent (Claude Code, Cursor, Codex, AdaL, or anything with shell/file tool access), just paste an instruction like this one — the agent does the fetch and follow itself in 2-3 tool calls:
 
-1. Fetch the `SKILL.md` content:
-   ```bash
-   curl -s https://adal.sylph.ai/api/workflows/<slug>/content | jq -r '.content'
-   ```
-2. Include the content in your agent's context.
-3. Done.
+```
+Run: curl -s https://adal.sylph.ai/api/workflows/<slug>/content
+Take the "content" field from the JSON response and save it as SKILL.md.
+Read SKILL.md and follow its instructions for this task: <your task here>
+```
 
-For full directory support (scripts/references), see [`PROTOCOL.md`](./PROTOCOL.md) §2 and §7.
+That's the entire integration — three tool calls (`curl`, write file, read file) the agent already knows how to make. There is no SDK to install, no code to write, nothing to configure.
+
+For agent builders who want `@workflow:<id>` (or similar) to work as a first-class reference inside their own agent rather than a one-off pasted instruction, see [`PROTOCOL.md`](./PROTOCOL.md) §8 for the full integration path (§8.1 content-only, §8.2 full directory support).
 
 ### API Reference
 
