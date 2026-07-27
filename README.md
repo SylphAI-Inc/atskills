@@ -128,6 +128,17 @@ Add `--save` (or `@workflow:<id> --save`) to persist an online workflow to `.wor
 2. Add a `SKILL.md` with YAML frontmatter.
 3. It's instantly usable: `@workflow:gh:<your-org>/<repo>/<path>` (or `/workflow gh:<your-org>/<repo>/<path>`).
 
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full guide (including platform-based, no-GitHub-required contribution).
+
+## Examples
+
+- [`examples/simple-tdd/SKILL.md`](./examples/simple-tdd/SKILL.md) — a simple, single-file workflow.
+- [`examples/code-review/SKILL.md`](./examples/code-review/SKILL.md) — a structured review workflow.
+
+## Full Technical Spec
+
+See [`PROTOCOL.md`](./PROTOCOL.md) for the complete wire format, API contracts, authentication, rate limits, caching, and error handling spec.
+
 ## Status
 
 MVP — this repo hosts the protocol spec. Feedback and PRs welcome.
