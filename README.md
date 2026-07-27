@@ -132,8 +132,8 @@ Three ways an agent (or AdaL) can load a workflow, depending on how much context
 | Mode | Trigger | What's loaded |
 |------|---------|----------------|
 | **Full load** (default) | `@workflow:<id>` | Entire directory downloaded; `SKILL.md` injected into context, scripts/references made available on disk |
-| **Index mode** | `@workflow:<id> --index` | Only the YAML frontmatter (`name` + `description`) is injected — the agent reads the full `SKILL.md` on-demand later if it decides the workflow is actually relevant. Useful for previewing many workflows cheaply. |
-| **Saved mode** | `@workflow:<id> --save` | Full directory is downloaded AND persisted to the project's `.workflows/<id>/` for reuse across sessions (git-tracked, permanent, offline-available afterward) |
+| **Index mode** | `@workflow:<id>:index` | Only the YAML frontmatter (`name` + `description`) is injected — the agent reads the full `SKILL.md` on-demand later if it decides the workflow is actually relevant. Useful for previewing many workflows cheaply. |
+| **Saved mode** | `@workflow:<id>:save` | Full directory is downloaded AND persisted to the project's `.workflows/<id>/` for reuse across sessions (git-tracked, permanent, offline-available afterward) |
 
 ## Minimal Integration (5 minutes)
 
@@ -216,17 +216,17 @@ flowchart TD
     ONLINE --> FOUND{"Found?"}
     FOUND -->|NO| ERROR["❌ Not found"]
     FOUND -->|YES| DOWNLOAD["Download full directory → session cache"]
-    DOWNLOAD --> SAVEFLAG{"--save flag?"}
+    DOWNLOAD --> SAVEFLAG{":save flag?"}
     SAVEFLAG -->|YES| PERSIST["Also copy → .workflows/slug/ (permanent)"]
     SAVEFLAG -->|NO| DONE["Ephemeral for this session only"]
 ```
 
-Add `--save` (or `@workflow:<id> --save`) to persist an online workflow's full directory to `.workflows/<slug>/` permanently.
+Add `:save` (or `@workflow:<id>:save`) to persist an online workflow's full directory to `.workflows/<slug>/` permanently.
 
 ## Why Workflows > Plugins/Bundles
 
 - **On-demand, not installed** — nothing added to your system prompt or project until you explicitly reference it.
-- **Ephemeral by default** — session-scoped unless you opt into `--save`; no cleanup chore, no bloated skill list.
+- **Ephemeral by default** — session-scoped unless you opt into `:save`; no cleanup chore, no bloated skill list.
 - **Works everywhere** — headless/CI included, not just interactive sessions.
 - **One at a time, exactly what you need** — vs. plugin bundles that install 5-15 skills to get the one you actually wanted.
 

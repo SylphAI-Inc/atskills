@@ -200,8 +200,8 @@ A client resolving a workflow reference (e.g. `@workflow:<id>`) chooses one of t
 | Mode | Trigger | Behavior |
 |------|---------|----------|
 | **Full load** (default) | plain `@workflow:<id>` | Download the entire directory (SKILL.md + scripts/references/templates) into the resolution tier's storage (§7); inject `SKILL.md` into the agent's context; make scripts/references available on disk for the agent to read/execute. |
-| **Index mode** | `@workflow:<id> --index` | Load only the YAML frontmatter (`name` + `description`) into context — a cheap preview. The agent decides whether the workflow is relevant, and only then fetches the full `SKILL.md`/directory. Useful when surfacing many candidate workflows without spending context budget on all of them upfront. |
-| **Saved mode** | `@workflow:<id> --save` | Same as full load, but the downloaded directory is also persisted to `.workflows/<id>/` in the project (git-trackable, available offline in future sessions) instead of only living in the ephemeral session cache. |
+| **Index mode** | `@workflow:<id>:index` | Load only the YAML frontmatter (`name` + `description`) into context — a cheap preview. The agent decides whether the workflow is relevant, and only then fetches the full `SKILL.md`/directory. Useful when surfacing many candidate workflows without spending context budget on all of them upfront. |
+| **Saved mode** | `@workflow:<id>:save` | Same as full load, but the downloaded directory is also persisted to `.workflows/<id>/` in the project (git-trackable, available offline in future sessions) instead of only living in the ephemeral session cache. |
 
 Consumers that only support the minimal single-file integration (§8.1) effectively only implement a stripped-down "full load" — content-only, no directory, no local persistence tier.
 
@@ -219,13 +219,13 @@ flowchart TD
     ONLINE --> FOUND{"Found?"}
     FOUND -->|NO| ERROR["Not found"]
     FOUND -->|YES| DOWNLOAD["Download full directory\n(GitHub tree, or SKILL.md-only for platform-hosted)\n→ session cache"]
-    DOWNLOAD --> SAVEFLAG{"--save flag? (§6)"}
+    DOWNLOAD --> SAVEFLAG{":save flag? (§6)"}
     SAVEFLAG -->|YES| PERSIST["Also copy → .workflows/slug/\n(permanent, git-trackable)"]
     SAVEFLAG -->|NO| DONE["Ephemeral for this session only"]
 ```
 
 1. **Project-local** — check `.workflows/<slug>/` in the current working directory / repo. Full directory, permanent, version-controlled, always wins, works offline.
-2. **Session cache** — `~/.adal/sessions/<session-id>/workflows/<slug>/`, an ephemeral cache scoped to the current agent session. Cleared when the session ends (unless promoted via `--save`).
+2. **Session cache** — `~/.adal/sessions/<session-id>/workflows/<slug>/`, an ephemeral cache scoped to the current agent session. Cleared when the session ends (unless promoted via `:save`).
 3. **Online (this protocol)** — fall back to the API endpoints in §4. Explicit GitHub paths (`gh:owner/repo/path`) bypass slug resolution and fetch the directory directly.
 
 Agents without file-system access (e.g. a stateless chat completion call) simply skip straight to step 3 on every invocation, using the content-only endpoints (§4.3/§4.4), and rely on their own caller-side caching for the equivalent of the session-cache tier.
