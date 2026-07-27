@@ -106,7 +106,7 @@ List all publicly indexed workflows.
 | `author` | string | Author, if present. |
 | `github_repo` | string | `owner/repo` this workflow is indexed from (GitHub-sourced workflows only). |
 | `github_path` | string | Path within the repo to the **workflow directory** (not just SKILL.md). |
-| `github_skill_path` | string | Canonical `gh:owner/repo/path` reference form — resolves the whole directory, usable directly with `@workflow:` / `/workflow`. |
+| `github_skill_path` | string | Canonical `gh:owner/repo/path` reference form — resolves the whole directory, usable directly with `@workflow:`. |
 | `tags` | string[] | Tags, if present. |
 
 Platform-created (non-GitHub) workflows omit the `github_*` fields — they are markdown-only, with no directory (§9).
@@ -199,7 +199,7 @@ A client resolving a workflow reference (e.g. `@workflow:<id>`) chooses one of t
 
 | Mode | Trigger | Behavior |
 |------|---------|----------|
-| **Full load** (default) | plain `@workflow:<id>` / `/workflow <id>` | Download the entire directory (SKILL.md + scripts/references/templates) into the resolution tier's storage (§7); inject `SKILL.md` into the agent's context; make scripts/references available on disk for the agent to read/execute. |
+| **Full load** (default) | plain `@workflow:<id>` | Download the entire directory (SKILL.md + scripts/references/templates) into the resolution tier's storage (§7); inject `SKILL.md` into the agent's context; make scripts/references available on disk for the agent to read/execute. |
 | **Index mode** | `@workflow:<id> --index` | Load only the YAML frontmatter (`name` + `description`) into context — a cheap preview. The agent decides whether the workflow is relevant, and only then fetches the full `SKILL.md`/directory. Useful when surfacing many candidate workflows without spending context budget on all of them upfront. |
 | **Saved mode** | `@workflow:<id> --save` | Same as full load, but the downloaded directory is also persisted to `.workflows/<id>/` in the project (git-trackable, available offline in future sessions) instead of only living in the ephemeral session cache. |
 
@@ -245,7 +245,7 @@ This resolution order is a **recommendation for a good client implementation**, 
 
 ### 8.2 Full integration (1 hour) — full directory support
 
-1. Add a `/workflow <slug>` (or `@workflow:<slug>`) command to your agent.
+1. Add an `@workflow:<slug>` reference (or equivalent command) to your agent.
 2. Resolve the slug first: `GET /api/workflows/resolve/{slug}` (§4.2) to get `github_repo` + `github_path` (or a direct `github_skill_path`).
 3. Fetch the **full directory** from that GitHub path (clone, GitHub Contents API, or download-and-extract a tarball) — this is what gets you `scripts/`, `references/`, and `templates/`, not just `SKILL.md`.
 4. Inject `SKILL.md`'s content into the agent's context; make the rest of the directory available on disk for the agent's file-read/execute tools.

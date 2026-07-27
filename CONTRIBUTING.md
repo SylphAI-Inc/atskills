@@ -56,7 +56,7 @@ For non-technical users, or workflows that are just a text prompt with no script
 4. Publish — you get a slug immediately.
 5. Anyone can use it right away:
    ```
-   /workflow <your-slug> <prompt>
+   @workflow:<your-slug> <prompt>
    ```
    or fetch it via the content API:
    ```bash
