@@ -92,7 +92,9 @@ test('buildPrompt: exact text plus read trail', async () => {
   fs.writeFileSync(path.join(root, '.autotrigger'), 'my-tdd\n');
 
   const { text, sections, tokens } = await buildPrompt(noNetCache, root);
-  assert.match(text, /- my-tdd: about my-tdd \(my-tdd\)/);
+  // the index entry ends with the READABLE path, like adal's skills index
+  assert.match(text, /- my-tdd: about my-tdd \(\.atskills\/my-tdd\/SKILL\.md\)/);
+  assert.match(text, /read the file at the path in parentheses/);
   assert.ok(tokens > 0);
   assert.equal(sections.length, 1);
   assert.ok(sections[0].ref.endsWith(path.join('my-tdd', 'SKILL.md')));

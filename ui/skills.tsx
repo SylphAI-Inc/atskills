@@ -13,7 +13,7 @@
 // The plumbing lives in ../lib; this file is only the surface.
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { createCliRenderer, decodePasteBytes } from '@opentui/core';
+import { createCliRenderer } from '@opentui/core';
 import type { KeyEvent } from '@opentui/core';
 // @ts-expect-error - moduleResolution quirks in @opentui/react exports
 import { createRoot, AppContext, useKeyboard } from '@opentui/react';
@@ -83,7 +83,15 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
   const [log, setLog] = useState<Block[]>([
     { kind: 'note', text: 'atskills — the @skills console. /help for commands.' },
   ]);
-  const [input, setInput] = useState('');
+  // The input is OpenTUI's native single-line <input> — it owns cursor
+  // movement, editing, and paste. We mirror its value for autocomplete and
+  // push completions back through the ref.
+  const inputRef = React.useRef<any>(null);
+  const [input, setInputText] = useState('');
+  const setInput = (v: string) => {
+    setInputText(v);
+    if (inputRef.current) inputRef.current.value = v;
+  };
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -115,23 +123,7 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
     });
   }, [input, items, knownIds, tick]);
 
-  // Paste arrives as a bracketed-paste event carrying bytes, never as
-  // keystrokes — decode and append to the input.
-  React.useEffect(() => {
-    const onPaste = (e: any) => {
-      let text = e?.text;
-      if (!text && e?.bytes) {
-        try {
-          text = decodePasteBytes(e.bytes);
-        } catch {
-          text = Buffer.from(e.bytes).toString('utf8');
-        }
-      }
-      if (text && view === 'main') setInput((v) => v + String(text).replace(/\s+/g, ' ').trim());
-    };
-    keyHandler?.on?.('paste', onPaste);
-    return () => keyHandler?.off?.('paste', onPaste);
-  }, [keyHandler, view]);
+  // Paste is handled natively by the <input> renderable (handlePaste).
   const cursor = Math.max(0, items.findIndex((i: Item) => i.id === selectedId));
   const current = items[Math.min(cursor, Math.max(0, items.length - 1))];
   const move = (delta: number) => {
@@ -285,9 +277,10 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
           return;
         }
 
-        // main view — the input owns the keyboard; typing is never dropped,
-        // only submits queue behind a running command.
+        // main view — the native <input> owns editing (cursor, arrows within
+        // the line, paste). Here: only completion, suggestion picking, exit.
         if (key.name === 'tab') {
+          key.preventDefault?.();
           const s = suggestions[Math.min(compIdx, suggestions.length - 1)];
           if (s) {
             setInput(s.next);
@@ -297,32 +290,10 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
         }
         if (key.name === 'up' && suggestions.length) return setCompIdx((i) => (i - 1 + suggestions.length) % suggestions.length);
         if (key.name === 'down' && suggestions.length) return setCompIdx((i) => (i + 1) % suggestions.length);
-        if (key.name === 'return') {
-          if (busy) return;
-          const value = input;
-          setInput('');
-          setCompIdx(0);
-          await submit(value);
-          return;
-        }
-        if (key.name === 'backspace') {
-          setCompIdx(0);
-          return setInput((v) => v.slice(0, -1));
-        }
         if (key.name === 'escape') return setInput('');
         if (key.ctrl && key.name === 'c') return onExit();
-        if (
-          key.sequence &&
-          key.sequence.length === 1 &&
-          !key.ctrl &&
-          !key.meta &&
-          !/[\u0000-\u001f\u007f]/.test(key.sequence)
-        ) {
-          setCompIdx(0);
-          setInput((v) => v + key.sequence);
-        }
       },
-      [busy, view, input, current, items, root, submit, showPrompt, onExit, suggestions, compIdx]
+      [busy, view, current, items, root, submit, showPrompt, onExit, suggestions, compIdx]
     )
   );
 
@@ -427,12 +398,25 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
           ))}
         </box>
       )}
-      <box borderStyle="single" style={{ flexShrink: 0, borderColor: GRAY, paddingLeft: 1, paddingRight: 1 }}>
-        <text>
-          <span fg={GREEN}>› </span>
-          <span>{input}</span>
-          {busy ? <span fg={YELLOW}> …working</span> : <span fg={BLUE}>█</span>}
-        </text>
+      <box borderStyle="single" style={{ flexShrink: 0, borderColor: GRAY, paddingLeft: 1, paddingRight: 1, flexDirection: 'row' }}>
+        <text fg={GREEN}>› </text>
+        <input
+          ref={inputRef}
+          focused={view === 'main'}
+          placeholder="@skills:<path> · /skills · /help"
+          onInput={(v: string) => {
+            setInputText(v);
+            setCompIdx(0);
+          }}
+          onSubmit={(v: string) => {
+            if (busy || !v.trim()) return;
+            setInput('');
+            setCompIdx(0);
+            void submit(v);
+          }}
+          style={{ flexGrow: 1 }}
+        />
+        {busy ? <text fg={YELLOW}> …working</text> : null}
       </box>
       <box style={{ flexShrink: 0 }}>
         <text fg={GRAY}>{suggestions.length ? 'tab complete · up/down pick · enter run' : 'enter run · /help'}</text>
