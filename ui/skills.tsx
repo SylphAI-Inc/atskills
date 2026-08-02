@@ -29,7 +29,7 @@ const GRAY = '#8b949e';
 const BLUE = '#58a6ff';
 const RED = '#ef4444';
 
-type Block = { kind: 'cmd' | 'text' | 'ref' | 'note' | 'error'; text: string };
+type Block = { kind: 'cmd' | 'text' | 'ref' | 'note' | 'error' | 'inject'; text: string };
 type Item = ReturnType<typeof lib.ui.collectItems>[number];
 
 const HELP = [
@@ -229,11 +229,10 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
         if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${localDir}/ (${bundled.length + 1} items)` });
         // …then what is actually sent to the model as the user query.
-        push({ kind: 'note', text: '[injected as the user query:]' });
-        push({ kind: 'text', text: `Content from @skills:${id} (${localFile}):\n${numbered}` });
+        push({ kind: 'inject', text: `Content from @skills:${id} (${localFile}):\n${numbered}` });
         if (bundled.length) {
           push({
-            kind: 'text',
+            kind: 'inject',
             text: `Dir: ${localDir}/\nListed files/directories inside:\n` + bundled.map((f) => `  - ${f}`).join('\n'),
           });
         }
@@ -247,9 +246,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
           { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${lib.sources.webUrl(id)}`}` },
-          { kind: 'note', text: '[injected as the user query:]' },
           {
-            kind: 'text',
+            kind: 'inject' as const,
             // The combination of the lists: one index line per child skill,
             // same shape as the skills prompt — name: description (path).
             text:
@@ -421,15 +419,44 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
       </box>
       <scrollbox focused stickyScroll stickyStart="bottom" style={{ flexGrow: 1, marginTop: 1 }}>
         <box style={{ flexDirection: 'column' }}>
-          {log.map((b, i) => (
-            <text
-              key={i}
-              selectable
-              fg={b.kind === 'cmd' ? BLUE : b.kind === 'ref' ? GRAY : b.kind === 'note' ? GREEN : b.kind === 'error' ? RED : undefined}
-            >
-              {b.kind === 'error' ? '✗ ' + b.text : b.text}
-            </text>
-          ))}
+          {(() => {
+            // Injected-prompt blocks render inside a bounding box so the
+            // display/injection split is unmistakable.
+            const grouped: Array<Block | { kind: 'inject-group' | 'display-group'; blocks: Block[] }> = [];
+            for (const b of log) {
+              const last = grouped[grouped.length - 1] as any;
+              if (b.kind === 'inject' && last && last.kind === 'inject-group') last.blocks.push(b);
+              else if (b.kind === 'inject') grouped.push({ kind: 'inject-group', blocks: [b] });
+              else if (b.kind === 'cmd') grouped.push({ kind: 'display-group', blocks: [b] });
+              else if (b.kind === 'ref' && last && last.kind === 'display-group') last.blocks.push(b);
+              else grouped.push(b);
+            }
+            return grouped.map((g: any, i: number) =>
+              g.kind === 'display-group' ? (
+                <box key={i} borderStyle="single" style={{ borderColor: BLUE, flexDirection: 'column', paddingLeft: 1, paddingRight: 1 }}>
+                  <text fg={BLUE}>[display]</text>
+                  {g.blocks.map((b: Block, j: number) => (
+                    <text key={j} selectable fg={b.kind === 'cmd' ? BLUE : GRAY}>{b.text}</text>
+                  ))}
+                </box>
+              ) : g.kind === 'inject-group' ? (
+                <box key={i} borderStyle="single" style={{ borderColor: GREEN, flexDirection: 'column', paddingLeft: 1, paddingRight: 1 }}>
+                  <text fg={GREEN}>[injected as the user query]</text>
+                  {g.blocks.map((b: Block, j: number) => (
+                    <text key={j} selectable>{b.text}</text>
+                  ))}
+                </box>
+              ) : (
+                <text
+                  key={i}
+                  selectable
+                  fg={g.kind === 'cmd' ? BLUE : g.kind === 'ref' ? GRAY : g.kind === 'note' ? GREEN : g.kind === 'error' ? RED : undefined}
+                >
+                  {g.kind === 'error' ? '✗ ' + g.text : g.text}
+                </text>
+              )
+            );
+          })()}
         </box>
       </scrollbox>
       {suggestions.length > 0 && (
