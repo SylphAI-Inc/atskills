@@ -26,8 +26,16 @@ branch — is what fetches).
    reuse silently, changed = fetch and note it in one line, offline = reuse and warn.
 3. **A directory is a menu.** No SKILL.md at the path → list it and show one line per
    skill, `path: description`. Hub: `...?prefix=<path>/`. GitHub: the git trees API,
-   entries ending in `SKILL.md`.
-4. **Fetch failed?** Offline → use the cached copy, say it may be stale. Definitively
+   entries ending in `SKILL.md`. Count with the leaf rule — a `SKILL.md` inside a
+   skill's bundle is that bundle's file, not a second skill.
+4. **Over 128 skills? Refuse.** A path naming hundreds of skills is a repo root, not
+   a collection anyone curated: listing one costs a fetch per skill and can exceed
+   your whole context window. Check the COUNT before fetching any body (the tree
+   listing is one request), then say how many it holds and name the largest
+   sub-paths that do fit — descend past sub-directories that are themselves over
+   128, or you will offer nothing usable. The same limit applies to a local
+   `.atskills/` directory and to `:save`.
+5. **Fetch failed?** Offline → use the cached copy, say it may be stale. Definitively
    gone (404) → say "upstream gone, cached <date>" and offer the cached copy.
    Neither → fail and say exactly why.
 
