@@ -2,6 +2,21 @@
 
 Workflows are a lightweight protocol built on top of the existing Skills format (SKILL.md). Same file, simpler lifecycle — no install, no system prompt footprint, load on demand, gone after. Designed to make agent instructions accessible to everyone, not just technical users.
 
+## Try it now — reference implementation
+
+This repo ships a working implementation of the current protocol generation (`@skills:` / `.atskills/` / `.autotrigger` / `.source`): a dependency-free CLI + library (`bin/`, `lib/`, Node ≥ 18), the agent spec ([`SKILLS.md`](./SKILLS.md)), and a runnable demo project:
+
+```bash
+cd examples/demo && alias atskills="node ../../bin/atskills.js"
+atskills get gh:sylphai-inc/skills/skills/glowmotion   # use — never installs
+atskills save gh:sylphai-inc/skills/skills/posthog-analytics  # save = adapt + detach
+atskills triggers                                      # what fires on its own
+atskills prompt                                        # the exact injected text
+atskills skills                                        # interactive management tree
+```
+
+See [`examples/demo/README.md`](./examples/demo/README.md) for the walkthrough. This generation supports local and GitHub-hosted skills; the hub comes later. (The `@workflow:` docs below describe the previous generation and are being migrated.)
+
 ## What is a Workflow?
 
 A workflow is a **directory** — not just a single file:

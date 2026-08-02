@@ -1,0 +1,22 @@
+{
+  "name": "atskills",
+  "version": "0.1.0",
+  "description": "Reference implementation of the @skills protocol — use, save, and auto-trigger agent skills like a browser, not a package manager.",
+  "license": "MIT",
+  "bin": {
+    "atskills": "bin/atskills.js"
+  },
+  "main": "lib/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "test:e2e": "bash tests/e2e-skills-ui.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SylphAI-Inc/atskills.git"
+  },
+  "keywords": ["agent", "skills", "skill.md", "protocol", "llm"]
+}
