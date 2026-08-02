@@ -17,6 +17,45 @@ atskills skills                                        # interactive management 
 
 See [`examples/demo/README.md`](./examples/demo/README.md) for the walkthrough. This generation supports local and GitHub-hosted skills; the hub comes later. (The `@workflow:` docs below describe the previous generation and are being migrated.)
 
+## The whole implementation, counted
+
+The entire protocol — use, save, auto-trigger, cache, conflicts — is **768 lines
+of code** (non-blank, non-comment), with **one** npm dependency. That number is
+the argument: distributing skills doesn't need a package manager, an install
+registry, or an update lifecycle. It needs a filesystem, HTTP, and git.
+
+```
+lib/                        the protocol (768 lines, dep: `ignore` only)
+├── ids.js             61   @skills:<path> grammar — gh:/hub IDs, pasted GitHub
+│                           URLs, :save/:install suffixes, traversal-safe
+├── fsx.js             85   the ground rules — leaf rule (a skill is a dir with
+│                           SKILL.md), frontmatter, closest-.source-above
+├── cache.js           87   browser-style validating cache — ETag/304, offline
+│                           = stale + warn, 404 = gone; a readable local tree
+├── sources.js        131   GitHub (raw / trees / ls-remote) + hub behind one
+│                           interface; the protocol never depends on the hub
+├── resolve.js         62   the whole resolution rule: local first, by path;
+│                           a directory is an index of its skills
+├── autotrigger.js    153   install = a line in one file; plain lines match
+│                           EXACTLY like .gitignore (globs, ! negation)
+├── prompt.js          34   the injected index — name: description (readable
+│                           path), so agents escalate with a plain file read
+└── save.js           155   save = adapt + detach — vendored at the ID's path,
+                            two-line .source, conflicts refuse loudly
+
+lib/ui.js             313   /skills tree logic + fallback TUI — filesystem
+                            checkboxes, split-never-assume, conflict surfacing
+bin/atskills.js       153   the CLI: get · save · triggers · prompt · skills
+ui/skills.tsx         522   the console app (OpenTUI/Bun) — @-input with
+                            autocomplete, display vs injected-prompt boxes
+tests/                401   28 unit tests + a PTY-driven E2E
+```
+
+For comparison: the *core* is smaller than most projects' install manifest
+handling alone. Everything heavyweight is delegated to things that already
+exist — git moves the bytes, ETags keep them fresh, gitignore semantics pick
+what fires, and your repo's history is the version control.
+
 ## What is a Workflow?
 
 A workflow is a **directory** — not just a single file:
