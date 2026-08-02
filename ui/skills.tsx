@@ -343,7 +343,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             return; // the install input owns every other key
           }
           if (key.name === 'q' || key.name === 'escape') { setView('main'); setNote(''); return; }
-          if (key.name === 'a' || key.name === 'i') { setAdding(true); return; }
+          if (key.name === 'a' || key.name === 'i' || key.name === 'tab') { setAdding(true); return; }
           if (key.name === 'up' || key.name === 'k') move(-1);
           else if (key.name === 'down' || key.name === 'j') move(1);
           else if (key.name === 'space' && current) {
@@ -442,29 +442,30 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         </scrollbox>
         <box style={{ flexDirection: 'column', flexShrink: 0 }}>
           {note ? <text fg={YELLOW}>{note}</text> : <text> </text>}
+          <box borderStyle="single" style={{ borderColor: adding ? GREEN : GRAY, paddingLeft: 1, paddingRight: 1, flexDirection: 'row', flexShrink: 0 }}>
+            <text fg={adding ? GREEN : GRAY}>install › </text>
+            <input
+              ref={addInputRef}
+              focused={adding}
+              placeholder="gh:owner/repo/path · hub: owner/skill (atskills.one) · trailing / = whole directory"
+              onSubmit={(v: string) => {
+                if (!v.trim()) return setAdding(false);
+                try {
+                  setNote(addTriggerLine(v));
+                } catch (err: any) {
+                  setNote(`invalid path: ${err.message}`);
+                }
+                if (addInputRef.current) addInputRef.current.value = '';
+                setAdding(false);
+                refresh();
+              }}
+              style={{ flexGrow: 1 }}
+            />
+          </box>
           {adding ? (
-            <box borderStyle="single" style={{ borderColor: GREEN, paddingLeft: 1, paddingRight: 1, flexDirection: 'row' }}>
-              <text fg={GREEN}>install › </text>
-              <input
-                ref={addInputRef}
-                focused
-                placeholder="gh:owner/repo/path · hub: owner/skill (atskills.one) · trailing / = whole directory"
-                onSubmit={(v: string) => {
-                  if (!v.trim()) return setAdding(false);
-                  try {
-                    setNote(addTriggerLine(v));
-                  } catch (err: any) {
-                    setNote(`invalid path: ${err.message}`);
-                  }
-                  if (addInputRef.current) addInputRef.current.value = '';
-                  setAdding(false);
-                  refresh();
-                }}
-                style={{ flexGrow: 1 }}
-              />
-            </box>
+            <text fg={GRAY}>enter install · esc back to the tree</text>
           ) : (
-            <text fg={GRAY}>a install — type a public path (gh: or atskills.one) · up/down move · space toggle · enter view prompt · esc back</text>
+            <text fg={GRAY}>tab/a type in the install box · up/down move · space toggle · enter view prompt · esc back</text>
           )}
         </box>
         </box>
