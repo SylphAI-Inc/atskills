@@ -81,7 +81,7 @@ async function cmdSave(rawId) {
   try {
     const r = await save(cache(), id, root);
     out(`${r.action === 'updated' ? 'updated' : 'saved'}: .atskills/${diskPath(id)}/ — yours now, detached`);
-    out(`.source records ${id} @ ${r.revision}`);
+    out(`.source records ${id} @ ${String(r.revision).slice(0, 7)}`);
     if (r.executables.length) out(`bundled executables (review before running): ${r.executables.join(', ')}`);
     if (trigger.hasLine(root, '@' + id)) {
       out(`note: .autotrigger has "@${id}" — your copy now answers it; flip the line to "${diskPath(id)}" so the file reads true`);

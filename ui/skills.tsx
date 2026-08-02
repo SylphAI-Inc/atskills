@@ -277,7 +277,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
       if (doSave) {
         try {
           const r = await lib.save(cache, id, root);
-          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${r.revision})` });
+          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${String(r.revision).slice(0, 7)})` });
           if (r.executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${r.executables.join(', ')}` });
           if (lib.autotrigger.hasLine(root, '@' + id)) {
             lib.autotrigger.removeLine(root, '@' + id);
@@ -448,7 +448,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
               <input
                 ref={addInputRef}
                 focused
-                placeholder="gh:owner/repo/path (or a local path; trailing / = whole directory)"
+                placeholder="gh:owner/repo/path · hub: owner/skill (atskills.one) · trailing / = whole directory"
                 onSubmit={(v: string) => {
                   if (!v.trim()) return setAdding(false);
                   try {
@@ -464,7 +464,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
               />
             </box>
           ) : (
-            <text fg={GRAY}>a install (type any path) · up/down move · space toggle · enter view prompt · esc back</text>
+            <text fg={GRAY}>a install — type a public path (gh: or atskills.one) · up/down move · space toggle · enter view prompt · esc back</text>
           )}
         </box>
         </box>
