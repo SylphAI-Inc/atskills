@@ -36,13 +36,13 @@ async function cmdGet(rawId) {
   if (res.kind === 'skill') {
     const where =
       res.where === 'local'
-        ? `local: ${path.relative(process.cwd(), res.dir)}${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
-        : `${res.where} (${res.status}): ${res.url}`;
-    err(`⎿ read ${where}`);
+        ? `${path.relative(process.cwd(), res.dir)}/SKILL.md${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
+        : `${res.url} (${res.status})`;
+    err(`⎿ read ${where} (${res.text.trimEnd().split('\n').length} lines)`);
     process.stdout.write(res.text);
     return;
   }
-  err(`⎿ listed directory ${id}/ (${res.entries.length} skills, ${res.where})`);
+  err(`⎿ listed directory ${id}/ (${res.entries.length} items)`);
   for (const e of res.entries) out(`${e.id}: ${e.description}`);
 }
 

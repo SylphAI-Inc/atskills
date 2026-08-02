@@ -200,7 +200,7 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
           bundled = [];
         }
         push(
-          { kind: 'ref', text: `⎿ read ${ref2}` },
+          { kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` },
           { kind: 'note', text: 'injected as the user query, exactly:' },
           { kind: 'text', text: `Content from @skills:${id}:\n${numbered}` }
         );
@@ -215,7 +215,7 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
         // line itself a valid path. This block is the injection, verbatim.
         setKnownIds((k) => [...new Set([...k, id, ...res.entries.map((e: any) => e.id)])]);
         push(
-          { kind: 'ref', text: `⎿ listed directory ${id}/ (${res.entries.length} skills, ${res.where})` },
+          { kind: 'ref', text: `⎿ listed directory ${id}/ (${res.entries.length} items)` },
           { kind: 'note', text: 'injected as the user query, exactly:' },
           {
             kind: 'text',

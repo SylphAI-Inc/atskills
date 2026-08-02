@@ -3,9 +3,21 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { normalizeId, isGh, diskPath, ghParts, parseReference } = require('../lib/ids');
 
-test('normalizeId folds case and strips trailing slash', () => {
-  assert.equal(normalizeId('GH:SylphAI-Inc/Skills/Deploy/'), 'gh:sylphai-inc/skills/deploy');
+test('normalizeId: hub IDs fold case; gh: paths preserve it (GitHub paths are case-sensitive)', () => {
+  assert.equal(normalizeId('GH:SylphAI-Inc/Skills/Deploy/'), 'gh:SylphAI-Inc/Skills/Deploy');
   assert.equal(normalizeId('Stripe/Payments'), 'stripe/payments');
+});
+
+test('normalizeId accepts pasted GitHub URLs like adal @workflow', () => {
+  assert.equal(
+    normalizeId('https://github.com/anthropics/skills/tree/main/skills/pdf'),
+    'gh:anthropics/skills/skills/pdf'
+  );
+  assert.equal(
+    normalizeId('github.com/anthropics/skills/blob/main/skills/pdf/SKILL.md'),
+    'gh:anthropics/skills/skills/pdf'
+  );
+  assert.equal(normalizeId('https://github.com/SylphAI-Inc/skills'), 'gh:SylphAI-Inc/skills');
 });
 
 test('normalizeId rejects traversal and junk', () => {

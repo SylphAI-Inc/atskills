@@ -7,8 +7,11 @@ CLI in this repo — `atskills get|save|triggers|prompt` — and inherit all of 
 A **skill** is a folder with a `SKILL.md` (Agent Skills standard: frontmatter `name` +
 `description`, then instructions; may bundle scripts and references). Its **path is its
 identity**: `sylphai/glowmotion` is a hub name; `gh:acme/skills/deploy` is a GitHub
-address (on disk, `gh:` is spelled `gh/` — folder names can't hold colons). IDs are
-lowercase.
+address (on disk, `gh:` is spelled `gh/` — folder names can't hold colons). Hub IDs
+are lowercase; `gh:` paths keep GitHub's casing (GitHub paths are case-sensitive).
+Pasted GitHub URLs are valid references: `github.com/owner/repo[/tree/<branch>|/blob/<branch>]/path`
+normalizes to `gh:owner/repo/path` (the branch segment drops; HEAD — the default
+branch — is what fetches).
 
 ## 1. Resolve `@skills:<path>`
 
