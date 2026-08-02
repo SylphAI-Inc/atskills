@@ -78,7 +78,7 @@ function suggestionsFor(input: string, ids: string[], known: string[]): Suggesti
     .map((c) => ({ label: c, next: `${head}@skills:${c}` }));
 }
 
-function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; onExit: () => void; keyHandler: any }) {
+function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: string; onExit: () => void; keyHandler: any; renderer: any }) {
   const [view, setView] = useState<'main' | 'skills' | 'prompt'>('main');
   const [log, setLog] = useState<Block[]>([
     { kind: 'note', text: 'atskills — the @skills console. /help for commands.' },
@@ -123,7 +123,33 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
     });
   }, [input, items, knownIds, tick]);
 
-  // Paste is handled natively by the <input> renderable (handlePaste).
+  // Paste is handled natively by the <input> renderable (handlePaste);
+  // bracketed paste mode is enabled at startup in main().
+
+  // Copy-out: drag-select any `selectable` text; the selection auto-copies
+  // to the clipboard (debounced), like adal's console.
+  React.useEffect(() => {
+    if (!renderer?.on) return;
+    let t: any = null;
+    const onSel = (sel: any) => {
+      const txt = sel?.getSelectedText?.();
+      if (!txt || !txt.trim()) return;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        try {
+          const { spawnSync } = require('node:child_process');
+          if (process.platform === 'darwin') spawnSync('pbcopy', [], { input: txt });
+          else spawnSync('xclip', ['-selection', 'clipboard'], { input: txt });
+          push({ kind: 'note', text: `copied ${txt.length} chars` });
+        } catch {}
+      }, 250);
+    };
+    renderer.on('selection', onSel);
+    return () => {
+      renderer.off?.('selection', onSel);
+      clearTimeout(t);
+    };
+  }, [renderer]);
   const cursor = Math.max(0, items.findIndex((i: Item) => i.id === selectedId));
   const current = items[Math.min(cursor, Math.max(0, items.length - 1))];
   const move = (delta: number) => {
@@ -192,11 +218,12 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
         } catch {
           bundled = [];
         }
-        push(
-          { kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` },
-          { kind: 'note', text: 'injected as the user query, exactly:' },
-          { kind: 'text', text: `Content from @skills:${id}:\n${numbered}` }
-        );
+        // Display first — the badges the user sees on the message…
+        push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
+        if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${id}/ (${bundled.length + 1} items)` });
+        // …then what is actually sent to the model as the user query.
+        push({ kind: 'note', text: '[injected to the model as the user query:]' });
+        push({ kind: 'text', text: `Content from @skills:${id}:\n${numbered}` });
         if (bundled.length) {
           push({
             kind: 'text',
@@ -211,7 +238,7 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
           res.where === 'local' ? id : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
           { kind: 'ref', text: `⎿ listed directory ${dirShown}/ (${res.entries.length} items)${res.where === 'local' ? '' : ' (cloud)'}` },
-          { kind: 'note', text: 'injected as the user query, exactly:' },
+          { kind: 'note', text: '[injected to the model as the user query:]' },
           {
             kind: 'text',
             text:
@@ -384,6 +411,7 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
           {log.map((b, i) => (
             <text
               key={i}
+              selectable
               fg={b.kind === 'cmd' ? BLUE : b.kind === 'ref' ? GRAY : b.kind === 'note' ? GREEN : b.kind === 'error' ? RED : undefined}
             >
               {b.kind === 'error' ? '✗ ' + b.text : b.text}
@@ -437,8 +465,14 @@ async function main() {
   const cache = new lib.Cache();
   const renderer = await createCliRenderer({ fps: 30 });
   const reactRoot = createRoot(renderer);
+  // Bracketed paste is a terminal mode the APP must enable (adal does the
+  // same via useBracketedPaste) — without it, Cmd+V never reaches the input.
+  process.stdout.write('\x1b[?2004h');
+  const disablePaste = () => process.stdout.write('\x1b[?2004l');
+  process.on('exit', disablePaste);
   const onExit = () => {
     try {
+      disablePaste();
       (renderer as any).disableMouse?.();
       renderer.destroy();
     } catch {}
@@ -446,7 +480,7 @@ async function main() {
   };
   reactRoot.render(
     <AppContext.Provider value={{ renderer, keyHandler: (renderer as any).keyInput }}>
-      <App cache={cache} root={root} onExit={onExit} keyHandler={(renderer as any).keyInput} />
+      <App cache={cache} root={root} onExit={onExit} keyHandler={(renderer as any).keyInput} renderer={renderer} />
     </AppContext.Provider>
   );
 }
