@@ -8,9 +8,41 @@ Use any agent skill by its path, without installing it. Same `SKILL.md` format t
 
 That reference is the entire integration surface. A path addresses a skill; reading it is using it.
 
+**It's just a file tree.** No manifest, no `marketplace.json`, no bundle or plugin concepts. A folder holding a `SKILL.md` is a skill; its path is its address; the tree is the marketplace.
+
+## Highlights
+
+**1 — Skills managed like a filesystem.** A path addresses *any granularity*: one skill, a collection by its parent directory, or a whole repo — and `@skills:` references, saves, and auto-trigger lines all respect the same GitHub path relations:
+
+```
+@skills:gh:sylphai-inc/skills                          the whole repo -> a menu
+@skills:gh:sylphai-inc/skills/skills                   the collection -> a menu
+@skills:gh:sylphai-inc/skills/skills/glowmotion        one skill -> its body
+@skills:gh:sylphai-inc/skills/skills/glowmotion:save   vendor it, adapt it, own it
+```
+
+A directory is a **menu** — one line per skill, every line itself a valid address — so browsing and using are the same gesture, and a "bundle" is just a directory you take one path at a time. Load a subtree now, a sibling later: the validating cache means nothing downloads twice — each use asks "did this change?", and unchanged serves instantly. Saves vendor at the ID's own path (`.atskills/gh/owner/repo/...`), so copies nest by source and answer their own address, exactly like Go's `vendor/`.
+
+**2 — `@` with the UX you already have.** Typing `@` autocompletes skills in the same dropdown agents already use for files: the project's own skills and every followed cloud ID complete instantly, each suggestion showing where it lives. A skill you've used is one keystroke away; one you've never seen is one pasted path away (GitHub URLs work as-is). Flexibility of paths, muscle memory of `@`.
+
+**3 — One config file, `.gitignore` semantics.** Everything that fires on its own is one readable file, with the same flexibility about which parts are on:
+
+```
+# .atskills/.autotrigger
+sec-checklist                       your skill — auto-triggers
+team-flows/                         every skill under the directory
+!team-flows/experimental            ...except that one
+@gh:stripe/agent-toolkit/payments   follow the provider's latest
+@gh:stripe/agent-toolkit/           follow the whole collection
+```
+
+Install = add a line; uninstall = remove it. A directory line covers present *and future* skills; `!` negation carves exceptions; an `@` line follows upstream. One `git diff` line per decision — no manifest, no lockfile, no per-machine state.
+
+**4 — `/skills`: one surface manages it all.** Nobody has to touch a dotfile: a checkbox tree over `.autotrigger` and `.atskills/` covers every kind of line (local, `gh:`, hub) and every kind of storage (your folders, saved copies with `.source` provenance). Check a box → a line is written; uncheck under a covering directory → the line **splits** so the file always reads true; *view prompt* shows the exact text the model sees, with its token count. Checkboxes, typed verbs, and hand edits are three ways to write the same one-line diffs.
+
 ## Try it now — reference implementation
 
-This repo ships a working client: a CLI + library with one dependency (`bin/`, `lib/`, Node ≥ 18), the agent spec ([`SKILLS.md`](./SKILLS.md)), and a runnable demo.
+This repo ships a working client: a CLI + library with one dependency (`bin/`, `lib/`, Node ≥ 18), a TypeScript protocol core for agent builders (`src/`), the agent spec ([`SKILLS.md`](./SKILLS.md)), and a runnable demo.
 
 ```bash
 cd examples/demo && alias atskills="node ../../bin/atskills.js"
@@ -114,31 +146,32 @@ Compatibility is bidirectional and lossless: every installed skill is already ad
 
 ## The whole implementation, counted
 
-The protocol — use, save, auto-trigger, cache, conflicts, the cap — is **880 lines** of code (non-blank, non-comment), with **one** npm dependency. That number is the argument: distributing skills doesn't need a package manager, an install registry, or an update lifecycle. It needs a filesystem, HTTP, and git.
+The protocol — use, save, auto-trigger, cache, conflicts, the cap — is still intentionally small, with **one** npm dependency (`ignore`). The current tree has two faces:
+
+- `src/` is the TypeScript protocol core for first-class agent integrations.
+- `lib/` + `bin/` are the runnable Node reference client used by the CLI and demo.
 
 ```
-lib/                        the protocol (880 lines, dep: `ignore` only)
-├── ids.js             62   @skills:<path> grammar — gh:/hub IDs, pasted GitHub
-│                           URLs, :save/:install suffixes, traversal-safe
-├── fsx.js            163   the ground rules — leaf rule, frontmatter,
-│                           closest-.source-above, the 128-skill cap
-├── cache.js           87   browser-style validating cache — ETag/304, offline
-│                           = stale + warn, 404 = gone; a readable local tree
-├── sources.js        139   GitHub (raw / trees / ls-remote) + hub behind one
-│                           interface; the protocol never depends on the hub
-├── resolve.js         64   the whole resolution rule: local first, by path;
-│                           a directory is an index of its skills
-├── autotrigger.js    153   install = a line in one file; plain lines match
-│                           EXACTLY like .gitignore (globs, ! negation)
-├── prompt.js          34   the injected index — name: description (readable
-│                           path), so agents escalate with a plain file read
-└── save.js           178   save = adapt + detach — vendored at the ID's path,
-                            two-line .source, conflicts refuse loudly
+src/                         TypeScript protocol core
+├── index.ts            51   one public export surface for agent builders
+├── types.ts           105   host-facing response, origin, and tree contracts
+├── ids.ts             150   @skills:<path> grammar — gh:/hub IDs, pasted
+│                           GitHub URLs, :save/:install suffixes, safe paths
+├── fsx.ts             240   filesystem rules — leaf skills, frontmatter,
+│                           closest-.source-above, atomic writes, pool helpers
+├── autotrigger.ts     221   install = a line in one file; plain lines match
+│                           gitignore semantics (globs, ! negation)
+├── residency.ts       103   the injected prompt index — readable paths with
+│                           name/description frontmatter
+├── tree.ts            304   /skills checkbox tree, toggle splitting, saved
+│                           provenance, and prompt-preview model
+└── resolver.ts        918   local-first resolution, GitHub/hub materialization,
+                            save = adapt + detach, cache, and 128-skill cap
 
-lib/ui.js             313   /skills tree logic + fallback TUI
-bin/atskills.js       153   the CLI: get · save · triggers · prompt · skills
-ui/skills.tsx         522   the console app (OpenTUI/Bun)
-tests/                489   39 unit tests + a PTY-driven E2E
+lib/                       runnable Node reference implementation
+bin/atskills.js       180   CLI: get · save · triggers · prompt · skills
+ui/skills.tsx         611   interactive /skills console app (OpenTUI/Bun)
+tests/                963   unit tests plus real-repo and PTY-driven E2E checks
 ```
 
 Everything heavyweight is delegated to something that already exists — git moves the bytes, ETags keep them fresh, gitignore semantics pick what fires, and your repo's history is the version control.

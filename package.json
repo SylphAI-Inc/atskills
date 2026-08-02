@@ -28,5 +28,9 @@
   ],
   "dependencies": {
     "ignore": "^7.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
   }
 }

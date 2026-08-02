@@ -104,7 +104,7 @@ export async function resolveSkill(
   save: boolean,
   opts: SkillResolverOpts,
   install = false,
-): Promise<LoadWorkflowResponse> {
+): Promise<LoadResponse> {
   let skillId: string;
   try {
     skillId = normalizeId(id);
@@ -116,7 +116,7 @@ export async function resolveSkill(
 
   // ── Local first, by path ──
   const local = resolveLocal(skillId, root);
-  let result: LoadWorkflowResponse;
+  let result: LoadResponse;
   if (save) {
     // Already the project's own? Then this is the save-again question, and
     // saveSkillToProject is the one place that answers it.
@@ -136,7 +136,7 @@ export async function resolveSkill(
     try {
       const line = installLineFor(root, skillId);
       addTriggerLine(root, line);
-      devLogger.info(`[skills] install '${skillId}' → ${SKILLS_DIR}/.autotrigger line '${line}'`);
+      opts.log?.info(`[skills] install '${skillId}' → ${SKILLS_DIR}/.autotrigger line '${line}'`);
     } catch (e) {
       return { ...result, warning: `Resolved '${skillId}' but could not write ${SKILLS_DIR}/.autotrigger: ${e}` };
     }
@@ -145,7 +145,7 @@ export async function resolveSkill(
 }
 
 /** Local resolution only — used by the resolver and by `/skills` listings. */
-export function resolveLocal(skillId: string, root: string): LoadWorkflowResponse | null {
+export function resolveLocal(skillId: string, root: string): LoadResponse | null {
   let dir: string;
   try {
     dir = safeJoin(root, diskPath(skillId));
@@ -216,7 +216,7 @@ async function fetchToDir(
   opts: SkillResolverOpts,
   source: 'cache' | 'local',
   ref?: string,
-): Promise<LoadWorkflowResponse> {
+): Promise<LoadResponse> {
   const dest = safeJoin(destRoot, diskPath(skillId));
 
   if (isGh(skillId)) {
@@ -239,10 +239,10 @@ function describeMaterialized(
   skillId: string,
   dest: string,
   source: 'cache' | 'local',
-): LoadWorkflowResponse {
+): LoadResponse {
   const origin = isGh(skillId)
-    ? ({ type: 'github', githubRepo: ghRepoOf(skillId), githubPath: ghParts(skillId).sub } as WorkflowOriginInfo)
-    : ({ type: 'marketplace', slug: skillId } as WorkflowOriginInfo);
+    ? ({ type: 'github', githubRepo: ghRepoOf(skillId), githubPath: ghParts(skillId).sub } as OriginInfo)
+    : ({ type: 'marketplace', slug: skillId } as OriginInfo);
 
   // A cloud read carries its review page; a local copy does not — that is
   // project code, read in the editor.
@@ -319,12 +319,12 @@ async function readThroughCache(
   skillId: string,
   cacheRoot: string,
   opts: SkillResolverOpts,
-): Promise<LoadWorkflowResponse> {
+): Promise<LoadResponse> {
   const dest = safeJoin(cacheRoot, diskPath(skillId));
   const meta = readCacheMeta(cacheRoot, skillId);
   const hasBody = meta !== null && fs.existsSync(dest);
 
-  const serveCached = (warning?: string): LoadWorkflowResponse | null => {
+  const serveCached = (warning?: string): LoadResponse | null => {
     try {
       const described = describeMaterialized(skillId, dest, 'cache');
       return warning ? { ...described, warning } : described;
@@ -801,7 +801,7 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
 export async function saveSkillToProject(
   id: string,
   opts: SkillResolverOpts,
-): Promise<LoadWorkflowResponse> {
+): Promise<LoadResponse> {
   let skillId: string;
   try {
     skillId = normalizeId(id);
@@ -859,7 +859,7 @@ export async function saveSkillToProject(
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 
-  devLogger.info(`[skills] saved '${skillId}' → ${rel}/ (rev ${revision})`);
+  opts.log?.info(`[skills] saved '${skillId}' → ${rel}/ (rev ${revision})`);
   const local = resolveLocal(skillId, root);
   return local ?? { success: false, error: `Saved '${skillId}' but nothing readable landed at ${rel}/` };
 }
