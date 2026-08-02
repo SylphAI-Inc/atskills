@@ -26,7 +26,6 @@
     "llm"
   ],
   "dependencies": {
-    "gray-matter": "^4.0.3",
     "ignore": "^7.0.6"
   }
 }

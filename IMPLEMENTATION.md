@@ -7,17 +7,18 @@ What the code is made of, what it leans on, and what it guarantees.
 
 | Layer | Runtime | Dependencies |
 |---|---|---|
-| `lib/` + `bin/` (protocol) | Node ≥ 18, plain CommonJS | **two spec packages only**: `ignore` (gitignore matching, zero deps) + `gray-matter` (frontmatter). Everything else is stdlib (`fs`, `path`, global `fetch`, `crypto`, `child_process`) |
+| `lib/` + `bin/` (protocol) | Node ≥ 18, plain CommonJS | **one spec package**: `ignore` (gitignore matching, zero deps). Everything else is stdlib (`fs`, `path`, global `fetch`, `crypto`, `child_process`) |
 | `ui/` (console app) | Bun | `@opentui/core` + `@opentui/react` 0.4.5, `react` 19 — the only dependency island, isolated in its own `ui/package.json` |
 | System tools leaned on | — | `git` (downloads + revisions), `tar` (none — removed), `pbcopy`/`xclip` (copy-out), any terminal |
 | Dev / test | — | `node --test` (built-in runner), `tuistory` (PTY driver for E2E of the TUI) |
 
 The principle: **never hand-roll a spec that already has a canonical
-implementation.** The two npm deps exist precisely because they ARE existing
-specs: `.autotrigger`'s plain lines match with git's own ignore semantics
-(globs, `!` negation, the parent-dir quirk — all of it) via the same `ignore`
-package ESLint uses; SKILL.md frontmatter parses with `gray-matter`, the
-ecosystem's standard. The same principle sends bigger jobs to system tools:
+implementation — but don't import a spec you only need a corner of.** The one
+npm dep exists because it IS an existing spec: `.autotrigger`'s plain lines
+match with git's own ignore semantics (globs, `!` negation, the parent-dir
+quirk — all of it) via the same `ignore` package ESLint uses. Frontmatter, by
+contrast, needs exactly two fields — a 25-line parser beats a YAML dependency.
+The same principle sends bigger jobs to system tools:
 
 - **Downloading a GitHub subtree** = `git clone --depth 1 --filter=blob:none --sparse`
   + `git sparse-checkout set <sub>`. One negotiated transfer, only the needed
@@ -41,7 +42,7 @@ ecosystem's standard. The same principle sends bigger jobs to system tools:
 | `autotrigger.js` | §2 | plain lines = literal **gitignore patterns** over the local tree (matched by the `ignore` package — globs and negation work exactly as in git); `@` lines = cloud IDs, local-first; per-line and per-child failures isolated; atomic tmp+rename writes; `addLine`/`removeLine`/`hasLine` are the single write path shared by suffixes, checkboxes, and the install box |
 | `prompt.js` | index render | `- name: description (readable path)` — project file for local, cache tree file for cloud — matching adal's skills index so an agent resolves entries with a plain file read |
 | `save.js` | §4 | save = adapt + detach; vendored at the ID's path; two-line `.source` (full sha); save-again: unedited (verified by `git fetch` at the recorded sha + tree compare) → replace; edited → **conflict**, refuse with the three ways out; downloads via git, dot-prefixed temp dirs |
-| `ui.js` | /skills (shared) | filesystem checkbox tree at any depth: chain compression, `[x]/[#]/[~]/[ ]`, SPLIT (uncheck a covered leaf → coarsest sibling lines) and COLLAPSE (all children on → one dir line); the saved-copy+`@`-line conflict is surfaced, not hidden; plus the no-Bun fallback TUI |
+| `ui.js` | /skills (shared) | filesystem checkbox tree at any depth: chain compression, `[x]/[#]/[~]/[ ]`, SPLIT (uncheck a covered leaf → coarsest sibling lines); **no auto-collapse** — a `dir/` line covers future skills, so only an explicit dir check writes it; pattern-covered rows show checked and point at their line; the saved-copy+`@`-line conflict is surfaced, not hidden; plus the no-Bun fallback TUI |
 | `bin/atskills.js` | CLI | thin porcelain: `get · save · triggers · prompt · skills`; adal-style badges (`⎿ read <local path> (N lines)`, `⎿ read skills directory <dir>/ (N skills)`) |
 | `ui/skills.tsx` | console app | OpenTUI: input with autocomplete (local + auto-trigger only), `[display]`/`[injected as the user query]` bounding boxes, `/skills` dialog with the always-visible install box, bracketed-paste enable (`\x1b[?2004h` — the app's job, not the terminal's), selection auto-copy |
 

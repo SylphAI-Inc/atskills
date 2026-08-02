@@ -1,4 +1,3 @@
 # what fires on its own in this project — one line per entry, like .gitignore
 @gh:sylphai-inc/skills/skills/posthog-analytics     # github — follows the provider's latest
-my-checklist
-writing/                                            # yours — every skill under the directory
+writing/

@@ -44,10 +44,13 @@ test('filesystem tree: dir node, split, collapse', () => {
   assert.equal(ui.isChecked(root, leaf), false);
   assert.equal(ui.isChecked(root, dir), 'partial');
 
-  // re-check the leaf → COLLAPSE back to one dir line
-  assert.match(ui.toggle(root, leaf), /collapsed to one line/);
-  assert.equal(trigger.hasLine(root, 'writing/'), true);
-  assert.equal(trigger.hasLine(root, 'writing/pr-descriptions'), false);
+  // re-check the leaf → its own line only. NEVER auto-collapsed to a dir line:
+  // a dir/ line also covers future skills, which the user did not opt into.
+  assert.match(ui.toggle(root, leaf), /added: writing\/commit-messages/);
+  assert.equal(trigger.hasLine(root, 'writing/'), false);
+  assert.equal(trigger.hasLine(root, 'writing/commit-messages'), true);
+  assert.equal(trigger.hasLine(root, 'writing/pr-descriptions'), true);
+  assert.equal(ui.isChecked(root, dir), 'partial'); // all children on ≠ the dir itself checked
 });
 
 test('conflict surfaced: saved copy + @ line for the same skill', () => {
@@ -67,4 +70,21 @@ test('conflict surfaced: saved copy + @ line for the same skill', () => {
   assert.match(ui.toggle(root, saved), /removed @ line/);
   assert.equal(trigger.hasLine(root, '@gh:acme/skills/deploy'), false);
   assert.equal(fs.existsSync(path.join(dir, 'SKILL.md')), true);
+});
+
+test('tree agrees with gitignore patterns; gh syntax untouched by matching', () => {
+  const root = project();
+  skill(root, 'sec-checklist', 'sec-checklist');
+  skill(root, 'sec-review', 'sec-review');
+  trigger.addLine(root, 'sec-*'); // a glob line — resolution semantics
+  trigger.addLine(root, '@gh:acme/skills/deploy'); // gh syntax: never pattern-matched
+
+  const items = ui.collectItems(root);
+  const leaf = items.find((i) => i.line === 'sec-checklist');
+  assert.equal(ui.isChecked(root, leaf), 'via-dir'); // covered by the pattern → shown checked
+  assert.match(ui.toggle(root, leaf), /covered by pattern "sec-\*"/); // can't split a glob — points at the line
+
+  const cloud = items.find((i) => i.kind === 'cloud');
+  assert.equal(cloud.id, 'gh:acme/skills/deploy'); // parsed as a cloud ID, not a pattern
+  assert.equal(ui.isChecked(root, cloud), 'direct');
 });
