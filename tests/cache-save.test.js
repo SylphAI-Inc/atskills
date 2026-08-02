@@ -93,7 +93,7 @@ test('cache: offline serves stale with warning', async () => {
   });
 });
 
-test('save: vendored path, two-line .source, save-again semantics', async () => {
+test('save: vendored path, two-line .source, save-again refuses', async () => {
   const lib = freshLib();
   const cache = new lib.Cache();
   const root = project();
@@ -112,22 +112,15 @@ test('save: vendored path, two-line .source, save-again semantics', async () => 
   assert.equal(res.where, 'local');
   assert.equal(res.source.id, 'demo/skill');
 
-  // save-again on a pristine copy = silent update
-  const r2 = await lib.save(cache, 'demo/skill', root);
-  assert.equal(r2.action, 'updated');
-
-  // adapt it, then save-again = never overwrite; upstream staged under .upstream/
+  // save-again refuses — it's your file now; refetch = delete + save
   fs.appendFileSync(path.join(dest, 'SKILL.md'), '\nmy house rules\n');
-  await assert.rejects(
-    () => lib.save(cache, 'demo/skill', root),
-    (err) => {
-      assert.equal(err.code, 'EDITED');
-      assert.ok(fs.existsSync(path.join(root, '.upstream/demo/skill/SKILL.md')));
-      return true;
-    }
-  );
+  await assert.rejects(() => lib.save(cache, 'demo/skill', root), /conflict: .*delete the folder, then :save again/s);
   // the adaptation is untouched
   assert.match(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8'), /my house rules/);
+  // delete + save-again = the refetch path
+  fs.rmSync(dest, { recursive: true, force: true });
+  const r2 = await lib.save(cache, 'demo/skill', root);
+  assert.equal(r2.action, 'saved');
 });
 
 test('save: refuses to overwrite the project\'s own work (no .source)', async () => {
@@ -137,7 +130,7 @@ test('save: refuses to overwrite the project\'s own work (no .source)', async ()
   const own = path.join(root, 'demo/skill');
   fs.mkdirSync(own, { recursive: true });
   fs.writeFileSync(path.join(own, 'SKILL.md'), '---\nname: mine\ndescription: mine\n---');
-  await assert.rejects(() => lib.save(cache, 'demo/skill', root), /project's own work/);
+  await assert.rejects(() => lib.save(cache, 'demo/skill', root), /conflict: .*project's own work/s);
 });
 
 test('resolve: local wins by path; cloud path with no folder goes to the cloud', async () => {

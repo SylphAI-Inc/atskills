@@ -87,10 +87,6 @@ async function cmdSave(rawId) {
       out(`note: .autotrigger has "@${id}" — your copy now answers it; flip the line to "${diskPath(id)}" so the file reads true`);
     }
   } catch (e) {
-    if (e.code === 'EDITED') {
-      err(`✗ ${e.message}`);
-      process.exit(2);
-    }
     throw e;
   }
 }

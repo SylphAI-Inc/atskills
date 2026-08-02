@@ -72,17 +72,21 @@ menus. (Implementations may append extra lines after the first two — ignore th
 1. Fetch all files of the skill folder (or directory subtree).
 2. Copy to `.atskills/<path>/` — the ID's own path, `gh:` spelled `gh/` (vendoring:
    saves from one org nest together, and the copy now answers its own address by
-   rule §1). A folder already there from an earlier save of the same ID → save-again:
-   unedited (still matches `.source` line 2) → replace and rewrite line 2; edited →
-   show the diff and ask (line 2 is the three-way base).
+   rule §1). A folder already there: if the copy is UNEDITED since you took it —
+   verify by comparing against upstream AT line 2's revision — **replace with the
+   new** and rewrite line 2. Edited (or unverifiable) → **conflict: refuse, touch
+   nothing**, and show the three ways to address it: keep yours (do nothing) ·
+   refetch (delete the folder, save again; git keeps the history) · merge (on the
+   user's ask, diff and merge — line 2's revision is the base).
 3. Write `.source` at the top of what you saved: line 1 the ID, line 2 the date and
    upstream revision. List any bundled executables in the confirmation.
 4. If `.autotrigger` has an `@` line for this ID, offer to flip it to plain — the
    copy answers it either way; plain just reads true.
 5. Confirm what landed where — and that the copy is now the project's, detached.
 
-Remove = delete the folder. There is no update lifecycle — a saved skill is detached;
-save-again (step 2) is the only refresh, and only on the user's ask.
+Remove = delete the folder. No update lifecycle, no merge machinery, no stored
+state beyond the two lines — clean copies replace, adapted copies conflict,
+merging happens only when asked.
 
 **`:install`** = append the skill's line to `.atskills/.autotrigger` (alone → the `@`
 cloud line; combined `:save:install` → a plain line naming the saved copy). Uninstall =
