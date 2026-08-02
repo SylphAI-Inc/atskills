@@ -1,0 +1,358 @@
+// atskills — the @skills console (OpenTUI, Bun runtime).
+//
+// The app IS a protocol client. You type the same gestures an agent uses:
+//
+//   @skills:<path>            use — the skill body (or a directory menu) prints
+//   @skills:<path>:save       own a copy (vendored + .source; save = adapt + detach)
+//   @skills:<path>:install    a line in .autotrigger (install = a line, nothing more)
+//   /skills                   the management tree — checkboxes write .autotrigger
+//   /prompt                   the exact injected text, with the read trail
+//   /help  /quit
+//
+// No state of its own — every action writes the same files a hand edit would.
+// The plumbing lives in ../lib; this file is only the surface.
+
+import React, { useCallback, useMemo, useState } from 'react';
+import { createCliRenderer } from '@opentui/core';
+import type { KeyEvent } from '@opentui/core';
+// @ts-expect-error - moduleResolution quirks in @opentui/react exports
+import { createRoot, AppContext, useKeyboard } from '@opentui/react';
+
+const path = require('node:path');
+const fs = require('node:fs');
+const lib = require('../lib/index.js');
+
+const GREEN = '#22c55e';
+const YELLOW = '#eab308';
+const GRAY = '#8b949e';
+const BLUE = '#58a6ff';
+const RED = '#ef4444';
+
+type Block = { kind: 'cmd' | 'text' | 'ref' | 'note' | 'error'; text: string };
+type Item = ReturnType<typeof lib.ui.collectItems>[number];
+
+const HELP = [
+  '@skills:<path>            use a skill — body prints here (a directory prints a menu)',
+  '@skills:<path>:save       own a copy — vendored at its path + .source (save = adapt + detach)',
+  '@skills:<path>:install    auto-trigger it — a line in .autotrigger (install = a line)',
+  '/skills                   manage — checkbox tree over .autotrigger; enter there = view prompt',
+  '/quit                     leave',
+  '',
+  'try: @skills:gh:anthropics/skills/skills   ·   @skills:gh:sylphai-inc/skills/skills',
+].join('\n');
+
+function App({ cache, root, onExit }: { cache: any; root: string; onExit: () => void }) {
+  const [view, setView] = useState<'main' | 'skills' | 'prompt'>('main');
+  const [log, setLog] = useState<Block[]>([
+    { kind: 'note', text: 'atskills — the @skills console. /help for commands.' },
+  ]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [prompt, setPrompt] = useState<any>(null);
+
+  const push = (...blocks: Block[]) => setLog((l) => [...l, ...blocks]);
+  const refresh = () => setTick((t) => t + 1);
+
+  const items: Item[] = useMemo(() => lib.ui.collectItems(root), [root, tick]);
+  const cursor = Math.max(0, items.findIndex((i: Item) => i.id === selectedId));
+  const current = items[Math.min(cursor, Math.max(0, items.length - 1))];
+  const move = (delta: number) => {
+    if (!items.length) return;
+    setSelectedId(items[(cursor + delta + items.length) % items.length].id);
+  };
+
+  const installLine = (id: string) =>
+    fs.existsSync(path.join(root, lib.diskPath(id))) ? lib.diskPath(id) : '@' + id;
+
+  const handleRef = useCallback(
+    async (ref: string) => {
+      const { id, save: doSave, install: doInstall } = lib.parseReference(ref);
+      if (doSave) {
+        try {
+          const r = await lib.save(cache, id, root);
+          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${r.revision})` });
+          if (r.executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${r.executables.join(', ')}` });
+          if (lib.autotrigger.hasLine(root, '@' + id)) {
+            lib.autotrigger.removeLine(root, '@' + id);
+            lib.autotrigger.addLine(root, lib.diskPath(id));
+            push({ kind: 'note', text: `flipped the @ line to plain — the file reads true` });
+          }
+        } catch (err: any) {
+          push({ kind: 'error', text: err.message });
+        }
+      }
+      if (doInstall) {
+        const line = installLine(id);
+        if (lib.autotrigger.addLine(root, line)) push({ kind: 'note', text: `installed = added one line to .autotrigger: ${line}` });
+        else push({ kind: 'note', text: `already installed: ${line}` });
+      }
+      if (doSave || doInstall) {
+        refresh();
+        return;
+      }
+      const res = await lib.resolve(cache, id, root);
+      if (res.kind === 'skill') {
+        const ref2 =
+          res.where === 'local'
+            ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md') +
+              (res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : '')
+            : `${res.url} (${res.status || res.where})`;
+        // What prints below is EXACTLY what an agent injects as the user
+        // query for this @ reference: content with numbered lines, plus a
+        // listing of the skill's bundled files (discoverable, not preloaded).
+        const numbered = res.text
+          .trimEnd()
+          .split('\n')
+          .map((l: string, i: number) => `${i + 1}|${l}`)
+          .join('\n');
+        let bundled: string[] = [];
+        try {
+          if (res.where === 'local') {
+            const walk = (d: string, rel: string): string[] =>
+              fs.readdirSync(d, { withFileTypes: true }).flatMap((e: any) => {
+                if (e.name.startsWith('.')) return [];
+                const r = rel ? `${rel}/${e.name}` : e.name;
+                return e.isDirectory() ? walk(path.join(d, e.name), r) : [r];
+              });
+            bundled = walk(res.dir, '').filter((f: string) => f !== 'SKILL.md');
+          } else if (id.startsWith('gh:')) {
+            bundled = (await lib.sources.listGhFiles(cache, id)).filter((f: string) => f !== 'SKILL.md');
+          }
+        } catch {
+          bundled = [];
+        }
+        push(
+          { kind: 'ref', text: `⎿ read ${ref2}` },
+          { kind: 'note', text: 'injected as the user query, exactly:' },
+          { kind: 'text', text: `Content from @skills:${id}:\n${numbered}` }
+        );
+        if (bundled.length) {
+          push({
+            kind: 'text',
+            text: `Dir: ${id}/\nListed files/directories inside:\n` + bundled.map((f) => `  - ${f}`).join('\n'),
+          });
+        }
+      } else {
+        // A directory reference injects a menu — one line per skill, every
+        // line itself a valid path. This block is the injection, verbatim.
+        push(
+          { kind: 'ref', text: `⎿ listed directory ${id}/ (${res.entries.length} skills, ${res.where})` },
+          { kind: 'note', text: 'injected as the user query, exactly:' },
+          {
+            kind: 'text',
+            text:
+              `Skills under @skills:${id}/ (reference any line the same way):\n` +
+              res.entries.map((e: any) => `${e.id}: ${e.description}`).join('\n'),
+          }
+        );
+      }
+    },
+    [cache, root]
+  );
+
+  const showPrompt = useCallback(async () => {
+    setPrompt(await lib.buildPrompt(cache, root));
+    setView('prompt');
+  }, [cache, root]);
+
+  const submit = useCallback(
+    async (raw: string) => {
+      const line = raw.trim();
+      if (!line) return;
+      push({ kind: 'cmd', text: `› ${line}` });
+      if (line === '/quit' || line === '/exit') return onExit();
+      if (line === '/help') return push({ kind: 'text', text: HELP });
+      if (line === '/skills') return setView('skills');
+      if (line.startsWith('/')) return push({ kind: 'error', text: `unknown command: ${line} — /help` });
+
+      const refs = line.match(/@?skills:\S+/g) || [line];
+      setBusy(true);
+      for (const r of refs) {
+        try {
+          await handleRef(r);
+        } catch (err: any) {
+          push({ kind: 'error', text: err.message });
+        }
+      }
+      setBusy(false);
+    },
+    [handleRef, onExit]
+  );
+
+  useKeyboard(
+    useCallback(
+      async (key: KeyEvent) => {
+        // The prompt view lives inside /skills — any key returns to the tree.
+        if (view === 'prompt') {
+          if (!busy) setView('skills');
+          return;
+        }
+        if (busy && view !== 'main') return;
+
+        if (view === 'skills') {
+          if (key.name === 'q' || key.name === 'escape') { setView('main'); setNote(''); return; }
+          if (key.name === 'up' || key.name === 'k') move(-1);
+          else if (key.name === 'down' || key.name === 'j') move(1);
+          else if (key.name === 'space' && current) {
+            if (current.kind === 'error') setNote('fix or remove this line in .autotrigger');
+            else {
+              const checked = lib.ui.isChecked(root, current);
+              if (checked === 'via-dir') setNote('covered by a directory line — uncheck that line instead');
+              else if (checked === 'direct') { lib.autotrigger.removeLine(root, current.line); setNote(`removed: ${current.line}`); }
+              else { lib.autotrigger.addLine(root, current.line); setNote(`added: ${current.line}`); }
+              refresh();
+            }
+          } else if (key.name === 'return') await showPrompt();
+          return;
+        }
+
+        // main view — the input owns the keyboard; typing is never dropped,
+        // only submits queue behind a running command.
+        if (key.name === 'return') {
+          if (busy) return;
+          const value = input;
+          setInput('');
+          await submit(value);
+          return;
+        }
+        if (key.name === 'backspace') return setInput((v) => v.slice(0, -1));
+        if (key.name === 'escape') return setInput('');
+        if (key.ctrl && key.name === 'c') return onExit();
+        if (
+          key.sequence &&
+          key.sequence.length === 1 &&
+          !key.ctrl &&
+          !key.meta &&
+          !/[\u0000-\u001f\u007f]/.test(key.sequence)
+        )
+          setInput((v) => v + key.sequence);
+      },
+      [busy, view, input, current, items, root, submit, showPrompt, onExit]
+    )
+  );
+
+  if (view === 'prompt' && prompt) {
+    return (
+      <box style={{ flexDirection: 'column', flexGrow: 1, padding: 1 }}>
+        <box style={{ flexDirection: 'column', flexShrink: 0 }}>
+          <text fg={GREEN}>/prompt</text>
+          <text fg={GRAY}>the exact text the model sees at session start (~{prompt.tokens} tokens)</text>
+        </box>
+        <scrollbox focused style={{ flexGrow: 1, marginTop: 1 }}>
+          <box style={{ flexDirection: 'column' }}>
+            <text>{prompt.text.trim() ? prompt.text.trimEnd() : '(nothing auto-triggers — the prompt is empty)'}</text>
+            <text> </text>
+            <text fg={BLUE}>read from:</text>
+            {prompt.sections.map((s: any, i: number) =>
+              s.error ? (
+                <text key={i} fg={YELLOW}>✗ {s.line} {s.error}</text>
+              ) : (
+                <text key={i} fg={GRAY}>⎿ read {s.ref}</text>
+              )
+            )}
+          </box>
+        </scrollbox>
+        <box style={{ flexShrink: 0 }}>
+          <text fg={GRAY}>any key to go back</text>
+        </box>
+      </box>
+    );
+  }
+
+  if (view === 'skills') {
+    return (
+      <box style={{ flexDirection: 'column', flexGrow: 1, padding: 1 }}>
+        <box style={{ flexDirection: 'column', flexShrink: 0 }}>
+          <text>
+            <span fg={GREEN}><b>/skills</b></span>
+            <span fg={GRAY}> — what fires on its own (writes .atskills/.autotrigger)</span>
+          </text>
+          <text> </text>
+        </box>
+        <scrollbox focused={false} style={{ flexGrow: 1 }}>
+          <box style={{ flexDirection: 'column' }}>
+            {items.length === 0 && <text fg={GRAY}>  nothing yet — save or install something from the console first</text>}
+            {items.map((item: Item, i: number) => {
+              const checked = lib.ui.isChecked(root, item);
+              const box_ = checked === 'direct' ? '[x]' : checked === 'via-dir' ? '[#]' : '[ ]';
+              const cur = i === cursor;
+              return (
+                <box key={item.id} style={{ flexDirection: 'column' }}>
+                  <text>
+                    <span fg={cur ? BLUE : GRAY}>{cur ? '> ' : '  '}</span>
+                    <span fg={checked ? GREEN : GRAY}>{box_}</span>
+                    <span> {String(item.label).padEnd(44)} </span>
+                    <span fg={item.kind === 'cloud' ? YELLOW : GRAY}>{item.origin}</span>
+                  </text>
+                  {cur && item.description ? <text fg={GRAY}>{'      ' + String(item.description).slice(0, 100)}</text> : null}
+                </box>
+              );
+            })}
+          </box>
+        </scrollbox>
+        <box style={{ flexDirection: 'column', flexShrink: 0 }}>
+          {note ? <text fg={YELLOW}>{note}</text> : <text> </text>}
+          <text fg={GRAY}>up/down move · space toggle · enter view prompt · esc back</text>
+        </box>
+      </box>
+    );
+  }
+
+  return (
+    <box style={{ flexDirection: 'column', flexGrow: 1, padding: 1 }}>
+      <box style={{ flexDirection: 'column', flexShrink: 0 }}>
+        <text>
+          <span fg={GREEN}><b>atskills</b></span>
+          <span fg={GRAY}> — @skills:&lt;path&gt; to use · :save to own · :install to auto-trigger · /skills · /help</span>
+        </text>
+      </box>
+      <scrollbox focused stickyScroll stickyStart="bottom" style={{ flexGrow: 1, marginTop: 1 }}>
+        <box style={{ flexDirection: 'column' }}>
+          {log.map((b, i) => (
+            <text
+              key={i}
+              fg={b.kind === 'cmd' ? BLUE : b.kind === 'ref' ? GRAY : b.kind === 'note' ? GREEN : b.kind === 'error' ? RED : undefined}
+            >
+              {b.kind === 'error' ? '✗ ' + b.text : b.text}
+            </text>
+          ))}
+        </box>
+      </scrollbox>
+      <box borderStyle="single" style={{ flexShrink: 0, borderColor: GRAY, paddingLeft: 1, paddingRight: 1 }}>
+        <text>
+          <span fg={GREEN}>› </span>
+          <span>{input}</span>
+          {busy ? <span fg={YELLOW}> …working</span> : <span fg={BLUE}>█</span>}
+        </text>
+      </box>
+    </box>
+  );
+}
+
+async function main() {
+  const root = lib.findAtskills(process.cwd());
+  if (!root) {
+    console.error('no .atskills/ found here or above — create one: mkdir .atskills');
+    process.exit(1);
+  }
+  const cache = new lib.Cache();
+  const renderer = await createCliRenderer({ fps: 30 });
+  const reactRoot = createRoot(renderer);
+  const onExit = () => {
+    try {
+      (renderer as any).disableMouse?.();
+      renderer.destroy();
+    } catch {}
+    process.exit(0);
+  };
+  reactRoot.render(
+    <AppContext.Provider value={{ renderer, keyHandler: (renderer as any).keyInput }}>
+      <App cache={cache} root={root} onExit={onExit} />
+    </AppContext.Provider>
+  );
+}
+
+main();

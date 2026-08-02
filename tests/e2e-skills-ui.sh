@@ -26,8 +26,8 @@ EOF
 
 fail() { echo "FAIL: $1"; tuistory snapshot -s "$SESSION" --trim || true; exit 1; }
 
-tuistory launch "node $REPO/bin/atskills.js skills" -s "$SESSION" --cwd "$WORK" --cols 100 --rows 30 --background >/dev/null
-tuistory wait "/skills" -s "$SESSION" --timeout 8000 >/dev/null || fail "UI did not start"
+tuistory launch "node $REPO/bin/atskills.js skills" -s "$SESSION" --cwd "$WORK" --cols 100 --rows 30 --env ATSKILLS_UI=basic --background >/dev/null
+tuistory wait "atskills" -s "$SESSION" --timeout 8000 >/dev/null || fail "UI did not start"
 
 SNAP="$(tuistory snapshot -s "$SESSION" --trim)"
 grep -q "my-tdd" <<<"$SNAP" || fail "local skill not listed"

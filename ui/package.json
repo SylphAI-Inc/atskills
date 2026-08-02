@@ -1,0 +1,10 @@
+{
+  "name": "atskills-ui",
+  "private": true,
+  "description": "OpenTUI console for the @skills protocol (Bun runtime). The plumbing CLI in ../bin stays dependency-free; this is the rich /skills surface.",
+  "dependencies": {
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5",
+    "react": "^19.1.0"
+  }
+}

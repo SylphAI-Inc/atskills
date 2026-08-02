@@ -51,8 +51,22 @@ file or URL every entry was read from:
 atskills prompt
 ```
 
-**7. Manage without touching a dotfile** — the interactive tree (checkbox = a line
-in `.autotrigger`; Enter = view prompt):
+**7. Three levels, one gesture** — the same `@` works on a whole marketplace, a
+plugin, or one skill; what changes is only how much menu you get. Try all three
+against Anthropic's official skills repo and compare the output:
+
+```bash
+atskills get gh:anthropics/skills              # marketplace — the whole repo, one line per skill
+atskills get gh:anthropics/skills/skills       # plugin — one directory of skills
+atskills get gh:anthropics/skills/skills/pdf   # skill — the body itself
+```
+
+A bundle is only ever a menu: at every level you still take skills one path at a
+time. `:save` and `:install` work at any of the three levels too.
+
+**8. The console app** — an input where you type the exact same gestures
+(`@skills:…`, `:save`, `:install`, `/skills` for the checkbox tree, Enter there
+for view-prompt):
 
 ```bash
 atskills skills

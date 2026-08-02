@@ -99,9 +99,30 @@ async function cmdPrompt() {
   }
 }
 
-// skills — the interactive management tree (non-technical users).
+// skills — the interactive console (non-technical users). Prefers the
+// OpenTUI app (ui/, Bun runtime); falls back to the built-in ANSI TUI when
+// Bun isn't around. ATSKILLS_UI=basic forces the fallback.
 async function cmdSkills() {
   const root = requireRoot();
+  if (process.env.ATSKILLS_UI !== 'basic') {
+    const { spawnSync } = require('child_process');
+    const fs = require('fs');
+    const uiDir = path.join(__dirname, '..', 'ui');
+    const app = path.join(uiDir, 'skills.tsx');
+    const hasBun = spawnSync('bun', ['--version'], { stdio: 'ignore' }).status === 0;
+    if (hasBun && fs.existsSync(app)) {
+      if (!fs.existsSync(path.join(uiDir, 'node_modules'))) {
+        err('first run — installing the console UI (bun install)…');
+        const install = spawnSync('bun', ['install'], { cwd: uiDir, stdio: 'inherit' });
+        if (install.status !== 0) {
+          err('install failed — falling back to the basic console');
+          return ui.run(cache(), root);
+        }
+      }
+      const run = spawnSync('bun', [app], { stdio: 'inherit', cwd: process.cwd() });
+      process.exit(run.status || 0);
+    }
+  }
   await ui.run(cache(), root);
 }
 
