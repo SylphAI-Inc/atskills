@@ -20,6 +20,7 @@ import { createRoot, AppContext, useKeyboard } from '@opentui/react';
 
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const lib = require('../lib/index.js');
 
 const GREEN = '#22c55e';
@@ -44,7 +45,7 @@ const HELP = [
 
 const SLASH_COMMANDS = ['/skills', '/help', '/quit'];
 
-type Suggestion = { label: string; next: string };
+type Suggestion = { label: string; next: string; where?: string };
 
 // Autocomplete: slash commands when the line starts with '/', and skill paths
 // behind the trailing '@' / '@skills:' token — candidates are the project's
@@ -97,8 +98,22 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
   const items: Item[] = useMemo(() => lib.ui.collectItems(root), [root, tick]);
   const suggestions = useMemo(() => {
     const ids = items.flatMap((i: Item) => [i.id, i.sourceId].filter(Boolean)) as string[];
-    return suggestionsFor(input, ids, knownIds);
-  }, [input, items, knownIds]);
+    // Annotate each path suggestion with where it already lives — the project
+    // folder, or the global cache (already downloaded by render time).
+    return suggestionsFor(input, ids, knownIds).map((s) => {
+      if (s.label.startsWith(':') || s.label.startsWith('/') || s.label === '@skills:' || s.label === 'gh:') return s;
+      try {
+        const id = lib.normalizeId(s.label);
+        const local = path.join(root, lib.diskPath(id));
+        if (fs.existsSync(local)) return { ...s, where: path.join('.atskills', lib.diskPath(id)) };
+        const loc = cache.location?.(lib.sources.skillUrl(id));
+        if (loc) return { ...s, where: 'cached · ' + loc.replace(os.homedir(), '~').replace(/\/body$/, '') };
+        return { ...s, where: 'not fetched yet' };
+      } catch {
+        return s;
+      }
+    });
+  }, [input, items, knownIds, tick]);
 
   // Paste arrives as a bracketed-paste event carrying bytes, never as
   // keystrokes — decode and append to the input.
@@ -405,8 +420,9 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
       {suggestions.length > 0 && (
         <box style={{ flexDirection: 'column', flexShrink: 0, paddingLeft: 2 }}>
           {suggestions.map((s, i) => (
-            <text key={s.label} fg={i === compIdx ? BLUE : GRAY}>
-              {(i === compIdx ? '› ' : '  ') + s.label}
+            <text key={s.label}>
+              <span fg={i === compIdx ? BLUE : GRAY}>{(i === compIdx ? '› ' : '  ') + s.label}</span>
+              {s.where ? <span fg={GRAY}>{'   ' + s.where}</span> : null}
             </text>
           ))}
         </box>
