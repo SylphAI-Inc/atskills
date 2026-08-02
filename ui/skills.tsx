@@ -235,9 +235,11 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         // line itself a valid path. This block is the injection, verbatim.
         setKnownIds((k) => [...new Set([...k, id, ...res.entries.map((e: any) => e.id)])]);
         const dirShown =
-          res.where === 'local' ? id : String(res.cacheDir || id).replace(os.homedir(), '~');
+          res.where === 'local'
+            ? path.join('.atskills', lib.diskPath(id))
+            : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
-          { kind: 'ref', text: `⎿ listed directory ${dirShown}/ (${res.entries.length} items)${res.where === 'local' ? '' : ' (cloud)'}` },
+          { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ' (cloud)'}` },
           { kind: 'note', text: '[injected to the model as the user query:]' },
           {
             kind: 'text',

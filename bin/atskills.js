@@ -66,7 +66,8 @@ async function cmdGet(rawId) {
     process.stdout.write(res.text);
     return;
   }
-  err(`⎿ listed directory ${res.where === 'local' ? id : short(res.cacheDir)}/ (${res.entries.length} items)${res.where === 'local' ? '' : ' (cloud)'}`);
+  const dirShown = res.where === 'local' ? path.join('.atskills', diskPath(id)) : short(res.cacheDir);
+  err(`⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ' (cloud)'}`);
   for (const e of res.entries) out(`${e.id}: ${e.description}`);
 }
 
