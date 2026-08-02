@@ -180,29 +180,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const handleRef = useCallback(
     async (ref: string) => {
       const { id, save: doSave, install: doInstall } = lib.parseReference(ref);
-      if (doSave) {
-        try {
-          const r = await lib.save(cache, id, root);
-          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${r.revision})` });
-          if (r.executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${r.executables.join(', ')}` });
-          if (lib.autotrigger.hasLine(root, '@' + id)) {
-            lib.autotrigger.removeLine(root, '@' + id);
-            lib.autotrigger.addLine(root, lib.diskPath(id));
-            push({ kind: 'note', text: `flipped the @ line to plain — the file reads true` });
-          }
-        } catch (err: any) {
-          push({ kind: 'error', text: err.message });
-        }
-      }
-      if (doInstall) {
-        const line = installLine(id);
-        if (lib.autotrigger.addLine(root, line)) push({ kind: 'note', text: `installed = added one line to .autotrigger: ${line}` });
-        else push({ kind: 'note', text: `already installed: ${line}` });
-      }
-      if (doSave || doInstall) {
-        refresh();
-        return;
-      }
+      // Using is reading — a suffixed reference still injects its content;
+      // :save / :install are actions IN ADDITION to the read, shown after it.
       const res = await lib.resolve(cache, id, root);
       if (res.kind === 'skill') {
         // The badge shows a LOCAL path — cloud copies live in the cache tree.
@@ -280,6 +259,26 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           }
         );
       }
+      if (doSave) {
+        try {
+          const r = await lib.save(cache, id, root);
+          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${r.revision})` });
+          if (r.executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${r.executables.join(', ')}` });
+          if (lib.autotrigger.hasLine(root, '@' + id)) {
+            lib.autotrigger.removeLine(root, '@' + id);
+            lib.autotrigger.addLine(root, lib.diskPath(id));
+            push({ kind: 'note', text: `flipped the @ line to plain — the file reads true` });
+          }
+        } catch (err: any) {
+          push({ kind: 'error', text: err.message });
+        }
+      }
+      if (doInstall) {
+        const line = installLine(id);
+        if (lib.autotrigger.addLine(root, line)) push({ kind: 'note', text: `installed = added one line to .autotrigger: ${line}` });
+        else push({ kind: 'note', text: `already installed: ${line}` });
+      }
+      if (doSave || doInstall) refresh();
     },
     [cache, root]
   );
@@ -328,14 +327,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           if (key.name === 'up' || key.name === 'k') move(-1);
           else if (key.name === 'down' || key.name === 'j') move(1);
           else if (key.name === 'space' && current) {
-            if (current.kind === 'error') setNote('fix or remove this line in .autotrigger');
-            else {
-              const checked = lib.ui.isChecked(root, current);
-              if (checked === 'via-dir') setNote('covered by a directory line — uncheck that line instead');
-              else if (checked === 'direct') { lib.autotrigger.removeLine(root, current.line); setNote(`removed: ${current.line}`); }
-              else { lib.autotrigger.addLine(root, current.line); setNote(`added: ${current.line}`); }
-              refresh();
-            }
+            setNote(lib.ui.toggle(root, current));
+            refresh();
           } else if (key.name === 'return') await showPrompt();
           return;
         }
@@ -406,14 +399,19 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             {items.length === 0 && <text fg={GRAY}>  nothing yet — save or install something from the console first</text>}
             {items.map((item: Item, i: number) => {
               const checked = lib.ui.isChecked(root, item);
-              const box_ = checked === 'direct' ? '[x]' : checked === 'via-dir' ? '[#]' : '[ ]';
+              const box_ = lib.ui.boxFor(checked);
               const cur = i === cursor;
+              // filesystem-tree glyphs for children of a directory node
+              const isLast = !(items[i + 1] && (items[i + 1] as any).parentDir === item.parentDir);
+              const glyph = item.depth ? (isLast ? ' └ ' : ' ├ ') : '';
+              const shown = String(item.display ?? item.label);
               return (
                 <box key={item.id} style={{ flexDirection: 'column' }}>
                   <text>
                     <span fg={cur ? BLUE : GRAY}>{cur ? '> ' : '  '}</span>
+                    <span fg={GRAY}>{glyph}</span>
                     <span fg={checked ? GREEN : GRAY}>{box_}</span>
-                    <span> {String(item.label).padEnd(44)} </span>
+                    <span> {shown.padEnd(44 - glyph.length)} </span>
                     <span fg={item.kind === 'cloud' ? YELLOW : GRAY}>{item.origin}</span>
                   </text>
                   {cur && item.description ? <text fg={GRAY}>{'      ' + String(item.description).slice(0, 100)}</text> : null}

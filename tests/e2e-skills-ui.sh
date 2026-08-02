@@ -45,7 +45,7 @@ tuistory snapshot -s "$SESSION" --trim | grep -q '\[x\] my-tdd' || fail "checkbo
 tuistory press -s "$SESSION" enter >/dev/null
 tuistory wait "view prompt" -s "$SESSION" --timeout 6000 >/dev/null || fail "view prompt did not open"
 PROMPT="$(tuistory snapshot -s "$SESSION" --trim)"
-grep -q -- "- my-tdd: How this project does TDD (my-tdd)" <<<"$PROMPT" || fail "injected entry missing from view prompt"
+grep -q -- "- my-tdd: How this project does TDD (.atskills/my-tdd/SKILL.md)" <<<"$PROMPT" || fail "injected entry missing from view prompt"
 grep -q "my-tdd/SKILL.md" <<<"$PROMPT" || fail "read trail missing local file link"
 grep -q "@gh:acme/skills/deploy" <<<"$PROMPT" || fail "unreachable cloud line not reported"
 
