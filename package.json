@@ -18,5 +18,15 @@
     "type": "git",
     "url": "https://github.com/SylphAI-Inc/atskills.git"
   },
-  "keywords": ["agent", "skills", "skill.md", "protocol", "llm"]
+  "keywords": [
+    "agent",
+    "skills",
+    "skill.md",
+    "protocol",
+    "llm"
+  ],
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "ignore": "^7.0.6"
+  }
 }

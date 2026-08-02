@@ -119,7 +119,7 @@ async function cmdPrompt() {
   err(`— ~${tokens} tokens, read from:`);
   for (const s of sections) {
     if (s.error) err(`  ✗ ${s.line}  ${s.error}`);
-    else err(`  ⎿ read ${s.ref}${s.web ? '  ·  review: ' + s.web : ''}`);
+    else err(`  ⎿ read ${String(s.ref).replace(require('os').homedir(), '~')}${s.web ? '  ·  review: ' + s.web : ''}`);
   }
 }
 

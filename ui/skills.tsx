@@ -118,7 +118,13 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const push = (...blocks: Block[]) => setLog((l) => [...l, ...blocks]);
   const refresh = () => setTick((t) => t + 1);
 
-  const items: Item[] = useMemo(() => lib.ui.collectItems(root), [root, tick]);
+  const items: Item[] = useMemo(() => {
+    try {
+      return lib.ui.collectItems(root);
+    } catch (err: any) {
+      return [{ kind: 'error', id: 'error', line: null, label: 'tree error', display: 'tree error', depth: 0, description: String(err.message), origin: 'invalid' }];
+    }
+  }, [root, tick]);
   const suggestions = useMemo(() => {
     // The autocomplete rule: local skills, then auto-trigger skills. Nothing else.
     const local = items
@@ -418,7 +424,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           <box style={{ flexDirection: 'column' }}>
             {items.length === 0 && <text fg={GRAY}>  nothing yet — save or install something from the console first</text>}
             {items.map((item: Item, i: number) => {
-              const checked = lib.ui.isChecked(root, item);
+              let checked: any = false;
+              try { checked = lib.ui.isChecked(root, item); } catch {}
               const box_ = lib.ui.boxFor(checked);
               const cur = i === cursor;
               // filesystem-tree glyphs for children of a directory node

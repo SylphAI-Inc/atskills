@@ -35,7 +35,7 @@ test('parse: comments, blanks, duplicates', () => {
   const entries = trigger.parse(root);
   assert.deepEqual(entries.map((e) => e.line), ['alpha', '@gh:acme/skills/deploy', 'team/']);
   assert.equal(entries[1].cloud, true);
-  assert.equal(entries[2].wholeDir, true);
+  assert.equal(entries[2].cloud, false); // plain = gitignore pattern
 });
 
 test('addLine/removeLine round-trip, idempotent, comment-safe', () => {
@@ -83,7 +83,7 @@ test('expand: local skills, dir lines, saved provenance, per-line errors', async
   // both failures reported, neither fatal
   assert.equal(errs.length, 2);
   assert.match(errs.find((e) => e.line === 'broken').error, /frontmatter/);
-  assert.match(errs.find((e) => e.line === 'missing-skill').error, /nothing at/);
+  assert.match(errs.find((e) => e.line === 'missing-skill').error, /matches nothing/);
 });
 
 test('buildPrompt: exact text plus read trail', async () => {
@@ -103,4 +103,18 @@ test('buildPrompt: exact text plus read trail', async () => {
 test('expand with empty/missing .autotrigger is empty, not an error', async () => {
   const root = project();
   assert.deepEqual(await trigger.expand(noNetCache, root), []);
+});
+
+test('plain lines use real gitignore semantics: globs and ! negation', async () => {
+  const root = project();
+  skill(root, 'writing/commit-messages', 'commit-messages');
+  skill(root, 'writing/drafts', 'drafts');
+  skill(root, 'sec-checklist', 'sec-checklist');
+  // exactly git's rules — negating inside a fully-matched dir doesn't work
+  // (same as .gitignore); the git idiom is dir/* + !dir/excluded
+  fs.writeFileSync(path.join(root, '.autotrigger'), 'writing/*\n!writing/drafts\nsec-*\n');
+
+  const entries = await trigger.expand(noNetCache, root);
+  const names = entries.filter((e) => !e.error).map((e) => e.fm.name).sort();
+  assert.deepEqual(names, ['commit-messages', 'sec-checklist']); // drafts negated out, glob matched
 });
