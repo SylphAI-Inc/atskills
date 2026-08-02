@@ -36,7 +36,7 @@ const HELP = [
   '@skills:<path>            use a skill — body prints here (a directory prints a menu)',
   '@skills:<path>:save       own a copy — vendored at its path + .source (save = adapt + detach)',
   '@skills:<path>:install    auto-trigger it — a line in .autotrigger (install = a line)',
-  '/skills                   manage — checkbox dialog over .autotrigger; enter there = view prompt',
+  '/skills                   view local skills · manage auto-trigger (local + cloud); enter there = view prompt',
   '/quit                     leave',
   '',
   'tab completes · up/down pick a suggestion · paths you browse join the autocomplete',
@@ -410,7 +410,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         <box style={{ flexDirection: 'column', flexShrink: 0 }}>
           <text>
             <span fg={GREEN}><b>/skills</b></span>
-            <span fg={GRAY}> — what fires on its own (writes .atskills/.autotrigger)</span>
+            <span fg={GRAY}> — view local skills · manage auto-trigger for local and cloud (writes .atskills/.autotrigger)</span>
           </text>
           <text> </text>
         </box>
