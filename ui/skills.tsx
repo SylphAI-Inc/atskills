@@ -78,9 +78,9 @@ function suggestionsFor(
   }
 
   const candidates = [...new Set([...sources.local.sort(), ...sources.autotrig.sort()])];
+  // No cap — the renderer windows the list; up/down reaches everything.
   return candidates
     .filter((c) => c.toLowerCase().startsWith(partial) && c.toLowerCase() !== partial)
-    .slice(0, 6)
     .map((c) => ({ label: c, next: `${head}@skills:${c}` }));
 }
 
@@ -522,16 +522,28 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           })()}
         </box>
       </scrollbox>
-      {suggestions.length > 0 && (
-        <box style={{ flexDirection: 'column', flexShrink: 0, paddingLeft: 2 }}>
-          {suggestions.map((s, i) => (
-            <text key={s.label}>
-              <span fg={i === compIdx ? BLUE : GRAY}>{(i === compIdx ? '› ' : '  ') + s.label}</span>
-              {s.where ? <span fg={GRAY}>{'   ' + s.where}</span> : null}
-            </text>
-          ))}
-        </box>
-      )}
+      {suggestions.length > 0 && (() => {
+        // Window the list around the picked entry — up/down scrolls through
+        // every candidate, indicators show what's off-screen.
+        const MAX = 10;
+        const start = Math.max(0, Math.min(compIdx - Math.floor(MAX / 2), suggestions.length - MAX));
+        const shown = suggestions.slice(start, start + MAX);
+        return (
+          <box style={{ flexDirection: 'column', flexShrink: 0, paddingLeft: 2 }}>
+            {start > 0 && <text fg={GRAY}>  ↑ {start} more</text>}
+            {shown.map((s, j) => {
+              const i = start + j;
+              return (
+                <text key={s.label}>
+                  <span fg={i === compIdx ? BLUE : GRAY}>{(i === compIdx ? '› ' : '  ') + s.label}</span>
+                  {s.where ? <span fg={GRAY}>{'   ' + s.where}</span> : null}
+                </text>
+              );
+            })}
+            {start + MAX < suggestions.length && <text fg={GRAY}>  ↓ {suggestions.length - start - MAX} more</text>}
+          </box>
+        );
+      })()}
       <box borderStyle="single" style={{ flexShrink: 0, borderColor: GRAY, paddingLeft: 1, paddingRight: 1, flexDirection: 'row' }}>
         <text fg={GREEN}>› </text>
         <input

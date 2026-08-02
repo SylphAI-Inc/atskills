@@ -53,3 +53,8 @@ test('isGh', () => {
   assert.equal(isGh('gh:a/b'), true);
   assert.equal(isGh('a/b'), false);
 });
+
+test('gh/ disk spelling folds back to gh: (screenshot bug)', () => {
+  assert.equal(normalizeId('gh/anthropics/skills/skills/docx'), 'gh:anthropics/skills/skills/docx');
+  assert.equal(diskPath(normalizeId('gh/anthropics/skills/skills/docx')), 'gh/anthropics/skills/skills/docx');
+});
