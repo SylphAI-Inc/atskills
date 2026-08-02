@@ -12,7 +12,8 @@
   },
   "scripts": {
     "test": "node --test tests/",
-    "test:e2e": "bash tests/e2e-skills-ui.sh"
+    "test:e2e": "bash tests/e2e-skills-ui.sh && bash tests/e2e-skills-ui-real.sh && bash tests/e2e-real-repos.sh",
+    "test:all": "npm test && npm run test:e2e"
   },
   "repository": {
     "type": "git",
