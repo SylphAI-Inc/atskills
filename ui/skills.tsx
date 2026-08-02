@@ -40,18 +40,35 @@ const HELP = [
   '/quit                     leave',
   '',
   'tab completes · up/down pick a suggestion · paths you browse join the autocomplete',
-  'try: @skills:gh:anthropics/skills/skills   ·   @skills:gh:sylphai-inc/skills/skills',
+  'try: @skills:gh:anthropics/skills/skills     @skills:gh:sylphai-inc/skills/skills',
+  '     @skills:gh:vercel-labs/agent-skills     @skills:gh:obra/superpowers/skills',
 ].join('\n');
 
 const SLASH_COMMANDS = ['/skills', '/help', '/quit'];
 
+// Well-known public skill sets, seeded into the @skills: listing so the big
+// world is one tab away before anything has been browsed. All verified live.
+const KNOWN_SETS = [
+  'gh:anthropics/skills/skills',
+  'gh:sylphai-inc/skills/skills',
+  'gh:vercel-labs/agent-skills',
+  'gh:obra/superpowers/skills',
+];
+
 type Suggestion = { label: string; next: string; where?: string };
 
-// Autocomplete: slash commands when the line starts with '/', and skill paths
-// behind the trailing '@' / '@skills:' token — candidates are the project's
-// own skills, cloud IDs learned from menus this session, and the suffix
-// grammar once a full path is typed.
-function suggestionsFor(input: string, ids: string[], known: string[]): Suggestion[] {
+// THE AUTOCOMPLETE RULE (mirrored in the design doc, §2):
+// `@skills:` completes, in priority order —
+//   1. the project's LOCAL skills (.atskills/, yours and saved)
+//   2. its AUTO-TRIGGER skills (cloud IDs from .autotrigger)
+//   3. skills BROWSED this session (directory menus you opened)
+//   4. well-known public sets (KNOWN_SETS), then the bare `gh:` prefix
+// plus the suffix grammar (:save/:install) once a full path is typed, and
+// slash commands when the line starts with '/'.
+function suggestionsFor(
+  input: string,
+  sources: { local: string[]; autotrig: string[]; browsed: string[] }
+): Suggestion[] {
   if (input.startsWith('/')) {
     return SLASH_COMMANDS.filter((c) => c.startsWith(input) && c !== input).map((c) => ({ label: c, next: c }));
   }
@@ -70,10 +87,17 @@ function suggestionsFor(input: string, ids: string[], known: string[]): Suggesti
       .map((s) => ({ label: `:${s}`, next: `${head}@skills:${base}:${s}` }));
   }
 
-  const candidates = [...new Set([...ids, ...known, 'gh:'])];
+  const candidates = [
+    ...new Set([
+      ...sources.local.sort(),
+      ...sources.autotrig.sort(),
+      ...sources.browsed.sort(),
+      ...KNOWN_SETS,
+      'gh:',
+    ]),
+  ];
   return candidates
     .filter((c) => c.toLowerCase().startsWith(partial) && c.toLowerCase() !== partial)
-    .sort()
     .slice(0, 6)
     .map((c) => ({ label: c, next: `${head}@skills:${c}` }));
 }
@@ -82,6 +106,13 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const [view, setView] = useState<'main' | 'skills' | 'prompt'>('main');
   const [log, setLog] = useState<Block[]>([
     { kind: 'note', text: 'atskills — the @skills console. /help for commands.' },
+    {
+      kind: 'text',
+      text:
+        'autocomplete: type @skills: and tab — it offers, in order, this project\'s\n' +
+        'local skills, its auto-trigger skills, anything you browse this session,\n' +
+        'then well-known public sets. What you use grows what it offers.',
+    },
   ]);
   // The input is OpenTUI's native single-line <input> — it owns cursor
   // movement, editing, and paste. We mirror its value for autocomplete and
@@ -105,10 +136,15 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
 
   const items: Item[] = useMemo(() => lib.ui.collectItems(root), [root, tick]);
   const suggestions = useMemo(() => {
-    const ids = items.flatMap((i: Item) => [i.id, i.sourceId].filter(Boolean)) as string[];
+    // The autocomplete rule: local skills first, then auto-trigger skills,
+    // then session-browsed, then known sets (see suggestionsFor).
+    const local = items
+      .filter((i: Item) => i.kind === 'yours' || i.kind === 'saved')
+      .flatMap((i: Item) => [i.id, i.sourceId].filter(Boolean)) as string[];
+    const autotrig = items.filter((i: Item) => i.kind === 'cloud').map((i: Item) => i.id) as string[];
     // Annotate each path suggestion with where it already lives — the project
     // folder, or the global cache (already downloaded by render time).
-    return suggestionsFor(input, ids, knownIds).map((s) => {
+    return suggestionsFor(input, { local, autotrig, browsed: knownIds }).map((s) => {
       if (s.label.startsWith(':') || s.label.startsWith('/') || s.label === '@skills:' || s.label === 'gh:') return s;
       try {
         const id = lib.normalizeId(s.label);
