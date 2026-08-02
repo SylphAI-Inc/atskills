@@ -41,7 +41,7 @@ async function cmdGet(rawId) {
     const where =
       res.where === 'local'
         ? `${path.relative(process.cwd(), res.dir)}/SKILL.md${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
-        : `${short(res.cachePath)} (cloud·${res.status})`;
+        : `${short(res.cachePath)} (cloud·${res.status})  ·  review: ${require('../lib/sources').webUrl(id)}`;
     err(`⎿ read ${where} (${res.text.trimEnd().split('\n').length} lines)`);
     // ...and list the skill's directory too (read + list, the @file/@dir hybrid).
     let bundled = [];
@@ -67,7 +67,7 @@ async function cmdGet(rawId) {
     return;
   }
   const dirShown = res.where === 'local' ? path.join('.atskills', diskPath(id)) : short(res.cacheDir);
-  err(`⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ' (cloud)'}`);
+  err(`⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${require('../lib/sources').webUrl(id)}`}`);
   for (const e of res.entries) out(`- ${e.name}: ${e.description} (${short(e.file) || e.id})`);
 }
 
@@ -120,7 +120,7 @@ async function cmdPrompt() {
   err(`— ~${tokens} tokens, read from:`);
   for (const s of sections) {
     if (s.error) err(`  ✗ ${s.line}  ${s.error}`);
-    else err(`  ⎿ read ${s.ref}`);
+    else err(`  ⎿ read ${s.ref}${s.web ? '  ·  review: ' + s.web : ''}`);
   }
 }
 

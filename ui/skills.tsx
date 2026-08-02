@@ -193,7 +193,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           res.where === 'local'
             ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md') +
               (res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : '')
-            : `${String(res.cachePath || res.url).replace(os.homedir(), '~')} (cloud·${res.status})`;
+            : `${String(res.cachePath || res.url).replace(os.homedir(), '~')} (cloud·${res.status})  ·  review: ${lib.sources.webUrl(id)}`;
         // What prints below is EXACTLY what an agent injects as the user
         // query for this @ reference: content with numbered lines, plus a
         // listing of the skill's bundled files (discoverable, not preloaded).
@@ -239,7 +239,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             ? path.join('.atskills', lib.diskPath(id))
             : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
-          { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ' (cloud)'}` },
+          { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${lib.sources.webUrl(id)}`}` },
           { kind: 'note', text: '[injected as the user query:]' },
           {
             kind: 'text',
@@ -350,7 +350,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
               s.error ? (
                 <text key={i} fg={YELLOW}>✗ {s.line} {s.error}</text>
               ) : (
-                <text key={i} fg={GRAY}>⎿ read {s.ref}</text>
+                <text key={i} fg={GRAY} selectable>⎿ read {s.ref}{s.web ? '  ·  review: ' + s.web : ''}</text>
               )
             )}
           </box>
