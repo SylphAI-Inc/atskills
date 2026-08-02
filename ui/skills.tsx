@@ -46,28 +46,18 @@ const HELP = [
 
 const SLASH_COMMANDS = ['/skills', '/help', '/quit'];
 
-// Well-known public skill sets, seeded into the @skills: listing so the big
-// world is one tab away before anything has been browsed. All verified live.
-const KNOWN_SETS = [
-  'gh:anthropics/skills/skills',
-  'gh:sylphai-inc/skills/skills',
-  'gh:vercel-labs/agent-skills',
-  'gh:obra/superpowers/skills',
-];
-
 type Suggestion = { label: string; next: string; where?: string };
 
-// THE AUTOCOMPLETE RULE (mirrored in the design doc, §2):
-// `@skills:` completes, in priority order —
-//   1. the project's LOCAL skills (.atskills/, yours and saved)
+// THE AUTOCOMPLETE RULE (mirrored in the design doc, §2) — kept simple:
+// `@skills:` completes ONLY what the project already knows —
+//   1. its LOCAL skills (.atskills/, yours and saved)
 //   2. its AUTO-TRIGGER skills (cloud IDs from .autotrigger)
-//   3. skills BROWSED this session (directory menus you opened)
-//   4. well-known public sets (KNOWN_SETS), then the bare `gh:` prefix
 // plus the suffix grammar (:save/:install) once a full path is typed, and
-// slash commands when the line starts with '/'.
+// slash commands when the line starts with '/'. Anything else, you type or
+// paste (GitHub URLs work) — discovery is the hub's job, not the input box's.
 function suggestionsFor(
   input: string,
-  sources: { local: string[]; autotrig: string[]; browsed: string[] }
+  sources: { local: string[]; autotrig: string[] }
 ): Suggestion[] {
   if (input.startsWith('/')) {
     return SLASH_COMMANDS.filter((c) => c.startsWith(input) && c !== input).map((c) => ({ label: c, next: c }));
@@ -87,15 +77,7 @@ function suggestionsFor(
       .map((s) => ({ label: `:${s}`, next: `${head}@skills:${base}:${s}` }));
   }
 
-  const candidates = [
-    ...new Set([
-      ...sources.local.sort(),
-      ...sources.autotrig.sort(),
-      ...sources.browsed.sort(),
-      ...KNOWN_SETS,
-      'gh:',
-    ]),
-  ];
+  const candidates = [...new Set([...sources.local.sort(), ...sources.autotrig.sort()])];
   return candidates
     .filter((c) => c.toLowerCase().startsWith(partial) && c.toLowerCase() !== partial)
     .slice(0, 6)
@@ -109,9 +91,9 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
     {
       kind: 'text',
       text:
-        'autocomplete: type @skills: and tab — it offers, in order, this project\'s\n' +
-        'local skills, its auto-trigger skills, anything you browse this session,\n' +
-        'then well-known public sets. What you use grows what it offers.',
+        'autocomplete: type @skills: and tab — it offers this project\'s local\n' +
+        'skills and its auto-trigger skills, nothing else. For the world, type or\n' +
+        'paste a path (GitHub URLs work): try @skills:gh:anthropics/skills/skills',
     },
   ]);
   // The input is OpenTUI's native single-line <input> — it owns cursor
@@ -136,15 +118,14 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
 
   const items: Item[] = useMemo(() => lib.ui.collectItems(root), [root, tick]);
   const suggestions = useMemo(() => {
-    // The autocomplete rule: local skills first, then auto-trigger skills,
-    // then session-browsed, then known sets (see suggestionsFor).
+    // The autocomplete rule: local skills, then auto-trigger skills. Nothing else.
     const local = items
       .filter((i: Item) => i.kind === 'yours' || i.kind === 'saved')
       .flatMap((i: Item) => [i.id, i.sourceId].filter(Boolean)) as string[];
     const autotrig = items.filter((i: Item) => i.kind === 'cloud').map((i: Item) => i.id) as string[];
     // Annotate each path suggestion with where it already lives — the project
     // folder, or the global cache (already downloaded by render time).
-    return suggestionsFor(input, { local, autotrig, browsed: knownIds }).map((s) => {
+    return suggestionsFor(input, { local, autotrig }).map((s) => {
       if (s.label.startsWith(':') || s.label.startsWith('/') || s.label === '@skills:' || s.label === 'gh:') return s;
       try {
         const id = lib.normalizeId(s.label);
@@ -157,7 +138,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         return s;
       }
     });
-  }, [input, items, knownIds, tick]);
+  }, [input, items, tick]);
 
   // Paste is handled natively by the <input> renderable (handlePaste);
   // bracketed paste mode is enabled at startup in main().
