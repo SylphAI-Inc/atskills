@@ -14,6 +14,14 @@ alias atskills="node ../../bin/atskills.js"   # or: npm i -g .. && atskills
 atskills get my-checklist
 ```
 
+**1b. Use a local bundle** — `writing/` holds two skills; a directory is an index,
+and its `.autotrigger` line covers every skill under it, present and future:
+
+```bash
+atskills get writing
+atskills triggers      # writing/ counts as its children
+```
+
 **2. Use a skill straight from GitHub** (cached like a browser page — run it twice
 and watch the second hit revalidate instead of re-downloading):
 
