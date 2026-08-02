@@ -254,6 +254,34 @@ This resolution order is a **recommendation for a good client implementation**, 
 
 Platform-hosted workflows (`source: "platform"`) never have a directory to fetch — `content` from §4.3 is the entire workflow for those.
 
+### 8.3 The collection cap — 128 skills per reference
+
+A reference names either **one skill** or **one collection**. A collection MUST hold no more than **128 skills**; a client MUST refuse a reference resolving to more, and SHOULD name smaller sub-paths that would work.
+
+**Why there is a limit at all.** A path can address a whole repository, and repositories exist holding thousands of skills — one real catalog holds 6,296. Resolving it costs a full clone (110 MB) or one fetch per skill against a quota, and yields an index of ~455k tokens, which exceeds most context windows on its own. Nobody curated that collection; it is a repo root that happens to be addressable. Refusing is what keeps "a directory is an index" safe at every size.
+
+**Why 128.** It is the manifest ceiling the largest catalog in the ecosystem already enforces on itself, so a bundle usable there is usable here. Adopting the existing number instead of inventing one keeps the two interoperable.
+
+**Requirements.**
+
+1. The cap counts **skills, not files**. A single skill whose bundle holds 500 files is one skill and MUST be allowed.
+2. The count MUST apply the leaf rule (§1): a `SKILL.md` inside another skill's bundle is that bundle's file, not a second skill.
+3. The check MUST happen **before the bodies are fetched**. Both transports make this cheap. A git client clones `--filter=blob:none --no-checkout` and counts with `ls-tree` — no blob is transferred, and `--no-checkout` is required, since populating a working tree lazily faults every blob in anyway. An API client counts from the single recursive tree listing it already fetches.
+4. The cap applies to **every** path that builds an index — remote fetch, local `.atskills/` walk, and `:save` — not only the network path. A vendored tree can be just as broad, and the index is what enters the model's context.
+5. A refusal SHOULD name the **shallowest sub-paths that fit**, not merely the immediate children: in a real aggregator every top-level child is itself oversized, so one level of grouping offers nothing. Descending until a node fits surfaces the ~10-skill bundles the author actually curated.
+
+**Example refusal.**
+
+```
+gh:sickn33/catalog holds 436 skills — over the 128 a single reference may load.
+Reference a specific skill, or one of the collections inside it:
+  gh:sickn33/catalog/plugins/bundle-api-builder  (12)
+  gh:sickn33/catalog/plugins/bundle-design-it    (12)
+  gh:sickn33/catalog/plugins/bundle-super-code   (12)
+```
+
+A refusal is not a loss of access. Any sub-path stays resolvable, and because both transports fetch subtrees (sparse checkout / per-path fetch), narrowing costs no more than the refused call would have.
+
 ## 9. Platform-Hosted Workflows Are Markdown-Only
 
 Workflows created via `POST /api/workflows/create` (or the `adalagent.ai/workflows/create` UI) are stored as a single markdown string in the platform database — there is no directory, no `scripts/`/`references/`/`templates/` support for this creation path. This is an intentional MVP simplification aimed at non-technical authors who just want to publish a prompt/playbook without touching GitHub. If a workflow needs the full directory power, author it on GitHub (§8, `CONTRIBUTING.md` → Option A) instead.
