@@ -270,7 +270,12 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             text:
               `Content from @skills:${id}/ (skills index — read a path for the full skill):\n` +
               res.entries
-                .map((e: any) => `- ${e.name}: ${e.description} (${String(e.file || e.id).replace(os.homedir(), '~')})`)
+                .map(
+                  (e: any) =>
+                    `- ${e.name}: ${e.description} (${String(e.file || e.id).replace(os.homedir(), '~')}${
+                      e.bundle && e.bundle.length ? ' · dir: ' + e.bundle.join(', ') : ''
+                    })`
+                )
                 .join('\n'),
           }
         );

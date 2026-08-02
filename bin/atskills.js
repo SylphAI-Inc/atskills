@@ -71,7 +71,7 @@ async function cmdGet(rawId) {
   }
   const dirShown = res.where === 'local' ? path.join('.atskills', diskPath(id)) : short(res.cacheDir);
   err(`⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${require('../lib/sources').webUrl(id)}`}`);
-  for (const e of res.entries) out(`- ${e.name}: ${e.description} (${short(e.file) || e.id})`);
+  for (const e of res.entries) out(`- ${e.name}: ${e.description} (${short(e.file) || e.id}${e.bundle && e.bundle.length ? ' · dir: ' + e.bundle.join(', ') : ''})`);
 }
 
 // save — copy to .atskills/<path>/ + two-line .source. Save = adapt + detach.
