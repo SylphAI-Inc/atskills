@@ -227,7 +227,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         const localDir = path.dirname(localFile);
         // Display first — the badges the user sees on the message…
         push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
-        if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${id}/ (${bundled.length + 1} items)` });
+        if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${localDir}/ (${bundled.length + 1} items)` });
         // …then what is actually sent to the model as the user query.
         push({ kind: 'note', text: '[injected as the user query:]' });
         push({ kind: 'text', text: `Content from @skills:${id} (${localFile}):\n${numbered}` });

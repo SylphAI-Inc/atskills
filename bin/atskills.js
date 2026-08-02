@@ -60,7 +60,10 @@ async function cmdGet(rawId) {
       }
     } catch { bundled = []; }
     if (bundled.length) {
-      err(`⎿ listed directory ${id}/ (${bundled.length + 1} items)`);
+      const localDir = res.where === 'local'
+        ? path.relative(process.cwd(), res.dir)
+        : short(path.dirname(res.cachePath));
+      err(`⎿ listed directory ${localDir}/ (${bundled.length + 1} items)`);
       for (const f of bundled) err(`  - ${f}`);
     }
     process.stdout.write(res.text);
