@@ -222,7 +222,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
         if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${id}/ (${bundled.length + 1} items)` });
         // …then what is actually sent to the model as the user query.
-        push({ kind: 'note', text: '[injected to the model as the user query:]' });
+        push({ kind: 'note', text: '[injected as the user query:]' });
         push({ kind: 'text', text: `Content from @skills:${id}:\n${numbered}` });
         if (bundled.length) {
           push({
@@ -240,12 +240,16 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
             : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
           { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ' (cloud)'}` },
-          { kind: 'note', text: '[injected to the model as the user query:]' },
+          { kind: 'note', text: '[injected as the user query:]' },
           {
             kind: 'text',
+            // The combination of the lists: one index line per child skill,
+            // same shape as the skills prompt — name: description (path).
             text:
-              `Skills under @skills:${id}/ (reference any line the same way):\n` +
-              res.entries.map((e: any) => `${e.id}: ${e.description}`).join('\n'),
+              `Content from @skills:${id}/ (skills index — read a path for the full skill):\n` +
+              res.entries
+                .map((e: any) => `- ${e.name}: ${e.description} (${String(e.file || e.id).replace(os.homedir(), '~')})`)
+                .join('\n'),
           }
         );
       }
