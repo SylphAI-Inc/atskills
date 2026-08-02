@@ -218,16 +218,23 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         } catch {
           bundled = [];
         }
+        // The agent works on LOCAL paths — the injection carries them, so the
+        // file (and its bundled siblings) can be re-read on demand.
+        const localFile =
+          res.where === 'local'
+            ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md')
+            : String(res.cachePath).replace(os.homedir(), '~');
+        const localDir = path.dirname(localFile);
         // Display first — the badges the user sees on the message…
         push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
         if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${id}/ (${bundled.length + 1} items)` });
         // …then what is actually sent to the model as the user query.
         push({ kind: 'note', text: '[injected as the user query:]' });
-        push({ kind: 'text', text: `Content from @skills:${id}:\n${numbered}` });
+        push({ kind: 'text', text: `Content from @skills:${id} (${localFile}):\n${numbered}` });
         if (bundled.length) {
           push({
             kind: 'text',
-            text: `Dir: ${id}/\nListed files/directories inside:\n` + bundled.map((f) => `  - ${f}`).join('\n'),
+            text: `Dir: ${localDir}/\nListed files/directories inside:\n` + bundled.map((f) => `  - ${f}`).join('\n'),
           });
         }
       } else {
