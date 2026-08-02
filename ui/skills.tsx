@@ -109,6 +109,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const [tick, setTick] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [adding, setAdding] = useState(false); // /skills install input open?
+  const addInputRef = React.useRef<any>(null);
   const [prompt, setPrompt] = useState<any>(null);
   const [knownIds, setKnownIds] = useState<string[]>([]);
   const [compIdx, setCompIdx] = useState(0);
@@ -172,6 +174,19 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const move = (delta: number) => {
     if (!items.length) return;
     setSelectedId(items[(cursor + delta + items.length) % items.length].id);
+  };
+
+  // install = a line in .autotrigger — typed straight into the dialog.
+  // Cloud IDs (or pasted GitHub URLs) become @ lines; existing local paths
+  // become plain lines; a trailing / keeps directory coverage.
+  const addTriggerLine = (raw: string): string => {
+    const wholeDir = /\/\s*$/.test(raw.trim());
+    const id = lib.normalizeId(raw.trim().replace(/^@/, ''));
+    const local = fs.existsSync(path.join(root, lib.diskPath(id)));
+    const line = (local ? lib.diskPath(id) : '@' + id) + (wholeDir ? '/' : '');
+    return lib.autotrigger.addLine(root, line)
+      ? `installed = added one line: ${line}`
+      : `already installed: ${line}`;
   };
 
   const installLine = (id: string) =>
@@ -323,7 +338,12 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         if (busy && view !== 'main') return;
 
         if (view === 'skills') {
+          if (adding) {
+            if (key.name === 'escape') setAdding(false);
+            return; // the install input owns every other key
+          }
           if (key.name === 'q' || key.name === 'escape') { setView('main'); setNote(''); return; }
+          if (key.name === 'a' || key.name === 'i') { setAdding(true); return; }
           if (key.name === 'up' || key.name === 'k') move(-1);
           else if (key.name === 'down' || key.name === 'j') move(1);
           else if (key.name === 'space' && current) {
@@ -349,7 +369,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         if (key.name === 'escape') return setInput('');
         if (key.ctrl && key.name === 'c') return onExit();
       },
-      [busy, view, current, items, root, submit, showPrompt, onExit, suggestions, compIdx]
+      [busy, view, current, items, root, submit, showPrompt, onExit, suggestions, compIdx, adding]
     )
   );
 
@@ -422,7 +442,30 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         </scrollbox>
         <box style={{ flexDirection: 'column', flexShrink: 0 }}>
           {note ? <text fg={YELLOW}>{note}</text> : <text> </text>}
-          <text fg={GRAY}>up/down move · space toggle · enter view prompt · esc back</text>
+          {adding ? (
+            <box borderStyle="single" style={{ borderColor: GREEN, paddingLeft: 1, paddingRight: 1, flexDirection: 'row' }}>
+              <text fg={GREEN}>install › </text>
+              <input
+                ref={addInputRef}
+                focused
+                placeholder="gh:owner/repo/path (or a local path; trailing / = whole directory)"
+                onSubmit={(v: string) => {
+                  if (!v.trim()) return setAdding(false);
+                  try {
+                    setNote(addTriggerLine(v));
+                  } catch (err: any) {
+                    setNote(`invalid path: ${err.message}`);
+                  }
+                  if (addInputRef.current) addInputRef.current.value = '';
+                  setAdding(false);
+                  refresh();
+                }}
+                style={{ flexGrow: 1 }}
+              />
+            </box>
+          ) : (
+            <text fg={GRAY}>a install (type any path) · up/down move · space toggle · enter view prompt · esc back</text>
+          )}
         </box>
         </box>
       </box>
