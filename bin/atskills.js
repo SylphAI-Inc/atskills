@@ -33,16 +33,40 @@ async function cmdGet(rawId) {
   const root = findAtskills(process.cwd());
   const res = await resolve(cache(), id, root);
 
+  const home = require('os').homedir();
+  const short = (p) => (p ? String(p).replace(home, '~') : p);
   if (res.kind === 'skill') {
+    // Like adal's @workflow: the badge shows a LOCAL path — the project file,
+    // or the cached copy's tree path for cloud skills.
     const where =
       res.where === 'local'
         ? `${path.relative(process.cwd(), res.dir)}/SKILL.md${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
-        : `${res.url} (${res.status})`;
+        : `${short(res.cachePath)} (cloud·${res.status})`;
     err(`⎿ read ${where} (${res.text.trimEnd().split('\n').length} lines)`);
+    // ...and list the skill's directory too (read + list, the @file/@dir hybrid).
+    let bundled = [];
+    try {
+      if (res.where === 'local') {
+        const walk = (d, rel) =>
+          require('fs').readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+            if (e.name.startsWith('.')) return [];
+            const r = rel ? `${rel}/${e.name}` : e.name;
+            return e.isDirectory() ? walk(path.join(d, e.name), r) : [r];
+          });
+        bundled = walk(res.dir, '').filter((f) => f !== 'SKILL.md');
+      } else if (isGh(id)) {
+        const sources = require('../lib/sources');
+        bundled = (await sources.listGhFiles(cache(), id)).filter((f) => f !== 'SKILL.md');
+      }
+    } catch { bundled = []; }
+    if (bundled.length) {
+      err(`⎿ listed directory ${id}/ (${bundled.length + 1} items)`);
+      for (const f of bundled) err(`  - ${f}`);
+    }
     process.stdout.write(res.text);
     return;
   }
-  err(`⎿ listed directory ${id}/ (${res.entries.length} items)`);
+  err(`⎿ listed directory ${res.where === 'local' ? id : short(res.cacheDir)}/ (${res.entries.length} items)${res.where === 'local' ? '' : ' (cloud)'}`);
   for (const e of res.entries) out(`${e.id}: ${e.description}`);
 }
 

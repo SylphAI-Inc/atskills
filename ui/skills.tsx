@@ -162,11 +162,12 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
       }
       const res = await lib.resolve(cache, id, root);
       if (res.kind === 'skill') {
+        // The badge shows a LOCAL path — cloud copies live in the cache tree.
         const ref2 =
           res.where === 'local'
             ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md') +
               (res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : '')
-            : `${res.url} (${res.status || res.where})`;
+            : `${String(res.cachePath || res.url).replace(os.homedir(), '~')} (cloud·${res.status})`;
         // What prints below is EXACTLY what an agent injects as the user
         // query for this @ reference: content with numbered lines, plus a
         // listing of the skill's bundled files (discoverable, not preloaded).
@@ -206,8 +207,10 @@ function App({ cache, root, onExit, keyHandler }: { cache: any; root: string; on
         // A directory reference injects a menu — one line per skill, every
         // line itself a valid path. This block is the injection, verbatim.
         setKnownIds((k) => [...new Set([...k, id, ...res.entries.map((e: any) => e.id)])]);
+        const dirShown =
+          res.where === 'local' ? id : String(res.cacheDir || id).replace(os.homedir(), '~');
         push(
-          { kind: 'ref', text: `⎿ listed directory ${id}/ (${res.entries.length} items)` },
+          { kind: 'ref', text: `⎿ listed directory ${dirShown}/ (${res.entries.length} items)${res.where === 'local' ? '' : ' (cloud)'}` },
           { kind: 'note', text: 'injected as the user query, exactly:' },
           {
             kind: 'text',
