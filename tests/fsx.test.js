@@ -16,18 +16,24 @@ test('frontmatter parses name/description, tolerates CRLF and quotes', () => {
   assert.deepEqual(frontmatter('no frontmatter'), { name: null, description: null });
 });
 
-test('walkSkills: leaf rule stops at SKILL.md; dot-dirs skipped', () => {
+test('walkSkills: leaf rule stops at SKILL.md; dot-dirs ARE walked, .git is not', () => {
   const root = tmp();
   fs.mkdirSync(path.join(root, 'a/nested'), { recursive: true });
   fs.writeFileSync(path.join(root, 'a/SKILL.md'), '---\nname: a\ndescription: d\n---');
   fs.writeFileSync(path.join(root, 'a/nested/SKILL.md'), 'should not be reached');
   fs.mkdirSync(path.join(root, 'b/c'), { recursive: true });
   fs.writeFileSync(path.join(root, 'b/c/SKILL.md'), '---\nname: c\ndescription: d\n---');
-  fs.mkdirSync(path.join(root, '.upstream/x'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.upstream/x/SKILL.md'), 'metadata, never listed');
+  // `.claude/skills/` and friends are where most of the ecosystem publishes —
+  // skipping every dot-dir hid ~12% of all skills and made local resolution
+  // disagree with remote listing, so a saved skill could vanish.
+  fs.mkdirSync(path.join(root, '.claude/skills/d'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude/skills/d/SKILL.md'), '---\nname: d\ndescription: d\n---');
+  // git's object store is the one directory that is never content.
+  fs.mkdirSync(path.join(root, '.git/objects/x'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.git/objects/x/SKILL.md'), 'never a skill');
 
   const rels = walkSkills(root).map((s) => s.rel).sort();
-  assert.deepEqual(rels, ['a', 'b/c']);
+  assert.deepEqual(rels, ['.claude/skills/d', 'a', 'b/c']);
 });
 
 test('nearestSource finds the closest .source above, stops at root', () => {

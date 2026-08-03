@@ -15,6 +15,7 @@ behavior only if a test here pins it. Three layers, strictest first:
 | `cache-save.test.js` | validating cache against a **local HTTP hub** (real ETag/304/404 flows) |
 | `collection-cap.test.js` | the 128-skill cap: counting, sub-collection suggestions, dedupe |
 | `save-gitbase.test.js` | save over **real `file://` git remotes** (the `gitBase` seam): vendored path + two-line `.source`, save-again replace/conflict, cap-refusal-is-a-verdict (never retried through the fallback), skills-not-files counting |
+| `ts-core.test.js` | the TypeScript core (`src/` → `dist/`, `npm run build` first; skips if unbuilt): local-first, the validating cache over `file://` remotes, the cap with suggestions, save + `.source`, the checkbox SPLIT, the residency prompt block |
 
 Hermetic means: local HTTP servers and on-disk git remotes speaking the same
 protocols GitHub speaks (`uploadpack.allowFilter`, `allowAnySHA1InWant`) —

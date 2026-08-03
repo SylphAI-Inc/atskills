@@ -43,7 +43,7 @@ exports.MAX_COLLECTION_SKILLS = 128;
 exports.AUTOTRIGGER_FILE = '.autotrigger';
 exports.SOURCE_FILE = '.source';
 /**
- * Accept pasted GitHub URLs, exactly like the old @workflow resolver did:
+ * Accept pasted GitHub URLs:
  * `github.com/owner/repo[/tree/<branch>|/blob/<branch>]/path` → `gh:owner/repo/path`
  * (the tree/blob + branch pair is spliced out; a trailing SKILL.md drops).
  */
@@ -129,12 +129,12 @@ function ghParts(id) {
 }
 /**
  * `@skills:<path>[:save][:install]` — the path is greedy until the trailing
- * suffixes, which combine in any order. `@workflow:` is a silent alias for the
- * same grammar. Throws (via normalizeId) on an unusable path.
+ * suffixes, which combine in any order. Throws (via normalizeId) on an
+ * unusable path.
  */
 function parseReference(raw) {
-    let rest = String(raw).replace(/^@?(skills|workflow):/, '');
-    const suffixes = { save: false, install: false, index: false };
+    let rest = String(raw).replace(/^@?skills:/, '');
+    const suffixes = { save: false, install: false };
     for (;;) {
         if (rest.endsWith(':save')) {
             suffixes.save = true;
@@ -144,11 +144,6 @@ function parseReference(raw) {
         if (rest.endsWith(':install')) {
             suffixes.install = true;
             rest = rest.slice(0, -8);
-            continue;
-        }
-        if (rest.endsWith(':index')) {
-            suffixes.index = true;
-            rest = rest.slice(0, -6);
             continue;
         }
         break;

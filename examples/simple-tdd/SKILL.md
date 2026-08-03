@@ -1,7 +1,7 @@
 ---
 name: simple-tdd
 description: Test-driven development methodology — write the failing test first, then the minimum code to pass it
-author: agentworkflows
+author: sylphai-inc
 version: 1.0.0
 tags: [testing, methodology]
 ---

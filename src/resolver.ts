@@ -760,7 +760,7 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
     const response = await fetch(`${base}/resolve/${skillId}`);
     if (response.status === 404) throw new Error(`Skill '${skillId}' not found in the registry`);
     if (!response.ok) throw new Error(`Registry returned HTTP ${response.status} for '${skillId}'`);
-    data = await response.json();
+    data = (await response.json()) as typeof data;
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }

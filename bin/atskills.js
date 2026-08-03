@@ -36,8 +36,8 @@ async function cmdGet(rawId) {
   const home = require('os').homedir();
   const short = (p) => (p ? String(p).replace(home, '~') : p);
   if (res.kind === 'skill') {
-    // Like adal's @workflow: the badge shows a LOCAL path — the project file,
-    // or the cached copy's tree path for cloud skills.
+    // The badge shows a LOCAL path — the project file, or the cached
+    // copy's tree path for cloud skills.
     const where =
       res.where === 'local'
         ? `${path.relative(process.cwd(), res.dir)}/SKILL.md${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
@@ -164,6 +164,42 @@ rules   local path answers first · using never installs · follow theirs, own y
 cache   ${DEFAULT_DIR}  (validating, like a browser; always safe to delete)
 `;
 
+/**
+ * `atskills paths` — normalize/validate references, one per line on stdin,
+ * one JSON object per line on stdout: {path, ok, id?, error?}.
+ *
+ * This exists so other languages can USE the grammar instead of restating it.
+ * The indexing pipeline is Python and previously re-implemented the path rules,
+ * the leaf rule, and the collection cap — three chances to disagree with the
+ * resolver, which is how unreferenceable paths reached the catalog. Batched:
+ * one process for the whole corpus, not one per path.
+ */
+async function cmdPaths() {
+  const input = await new Promise((resolve) => {
+    let buffer = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => { buffer += chunk; });
+    process.stdin.on('end', () => resolve(buffer));
+  });
+  let ok = 0;
+  let bad = 0;
+  const lines = [];
+  for (const raw of input.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    try {
+      lines.push(JSON.stringify({ path: line, ok: true, id: normalizeId(line) }));
+      ok++;
+    } catch (e) {
+      lines.push(JSON.stringify({ path: line, ok: false, error: e.message }));
+      bad++;
+    }
+  }
+  process.stdout.write(lines.join('\n') + (lines.length ? '\n' : ''));
+  err(`⎿ paths: ${ok} valid, ${bad} rejected`);
+  if (bad) process.exitCode = 2;
+}
+
 (async () => {
   const [cmd, arg] = process.argv.slice(2);
   try {
@@ -172,6 +208,7 @@ cache   ${DEFAULT_DIR}  (validating, like a browser; always safe to delete)
     else if (cmd === 'triggers') await cmdTriggers();
     else if (cmd === 'prompt') await cmdPrompt();
     else if (cmd === 'skills') await cmdSkills();
+    else if (cmd === 'paths') await cmdPaths();
     else process.stdout.write(HELP);
   } catch (e) {
     err(`✗ ${e.message}`);

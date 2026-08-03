@@ -709,7 +709,7 @@ async function downloadRegistry(skillId, dest, opts) {
             throw new Error(`Skill '${skillId}' not found in the registry`);
         if (!response.ok)
             throw new Error(`Registry returned HTTP ${response.status} for '${skillId}'`);
-        data = await response.json();
+        data = (await response.json());
     }
     catch (e) {
         throw e instanceof Error ? e : new Error(String(e));

@@ -197,7 +197,25 @@ There is no submission step, because there is no registry to submit to. See [`CO
 
 ## Status
 
-The `@skills:` generation (`.atskills/`, `.autotrigger`, `.source`) is implemented here and specified in [`SKILLS.md`](./SKILLS.md) and [`PROTOCOL.md`](./PROTOCOL.md). `@workflow:` is the previous spelling of the same grammar and is still accepted as an alias. The hub ships later; nothing in the protocol depends on it.
+The `@skills:` protocol (`.atskills/`, `.autotrigger`, `.source`) is implemented here and specified in [`SKILLS.md`](./SKILLS.md) and [`PROTOCOL.md`](./PROTOCOL.md). The hub ships later; nothing in the protocol depends on it.
+
+## TODO — ship as a package for both Python and JS
+
+The rules here are the source of truth, so anything that consumes them must *call* them rather than restate them. Today only JS can, and that is already a problem: the skills-indexing pipeline is Python, re-implemented the path grammar and the leaf rule, and drifted — it built a catalog full of references the resolver rejects.
+
+The stopgap is `atskills paths`, which reads references on stdin and writes one JSON verdict per line, so any language can shell out once with a whole corpus:
+
+```bash
+node bin/atskills.js paths < paths.txt   # {path, ok, id?, error?}
+```
+
+That works but is not a dependency anyone can declare. What is needed:
+
+- **Publish the JS package** (`atskills`, has a `bin`) so consumers pin a version instead of a path to a clone.
+- **A Python package** exposing the same primitives — `normalize_id`, `parse_reference`, `leaf_skill_dirs`, `MAX_COLLECTION_SKILLS` — as a real import, not a subprocess.
+- **One conformance suite run by both**, so the two cannot disagree. Shared test vectors (valid/invalid paths, leaf-rule trees, cap boundaries) in a language-neutral file, executed by each implementation.
+
+The last point matters most: two implementations without a shared suite are two protocols. Whatever the packaging, the vectors are what keep them one.
 
 ## License
 

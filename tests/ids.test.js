@@ -8,7 +8,7 @@ test('normalizeId: hub IDs fold case; gh: paths preserve it (GitHub paths are ca
   assert.equal(normalizeId('Stripe/Payments'), 'stripe/payments');
 });
 
-test('normalizeId accepts pasted GitHub URLs like adal @workflow', () => {
+test('normalizeId accepts pasted GitHub URLs', () => {
   assert.equal(
     normalizeId('https://github.com/anthropics/skills/tree/main/skills/pdf'),
     'gh:anthropics/skills/skills/pdf'

@@ -1,27 +1,26 @@
-# Workflow Protocol — Technical Specification
+# The `@skills:` Protocol — Technical Specification
 
-**Status**: MVP, stable. This document is the source of truth for the wire format, directory structure, and API contracts. Backward-incompatible changes will be called out explicitly and versioned.
+**Status**: stable. This document is the source of truth for implementers: the directory format, the addressing grammar, resolution, save, and auto-trigger semantics. The agent-facing form of the same rules is [`SKILLS.md`](./SKILLS.md); the executable form is [`tests/`](./tests/README.md). The protocol is purely a filesystem plus git — there is no manifest, no lockfile, and no registry dependency anywhere below.
 
-## 1. What a Workflow Is
+## 1. What a Skill Is
 
-A workflow is a **directory**, not a single file. `SKILL.md` is the required entrypoint; everything else is optional supporting material:
+A skill is a **directory**, not a single file. `SKILL.md` is the required entrypoint; everything else is optional supporting material:
 
 ```
-my-workflow/
+my-skill/
   SKILL.md              # Required — the instructions (YAML frontmatter + markdown body)
-  scripts/               # Optional — helper scripts the agent can execute
-  references/             # Optional — reference docs, examples, lookup data
-  templates/               # Optional — boilerplate files the agent may copy/fill in
+  scripts/              # Optional — helper scripts the agent can execute
+  references/           # Optional — reference docs, examples, lookup data
+  templates/            # Optional — boilerplate files the agent may copy/fill in
 ```
 
-Many workflows are just a `SKILL.md` with no supporting directories — that's a perfectly valid, complete workflow. `scripts/`, `references/`, and `templates/` exist for workflows that genuinely need runnable code, lookup data, or boilerplate alongside the instructions. A workflow directory is format-identical to a Claude Code / Cursor / skills.sh skill directory — same shape, different delivery lifecycle (see `README.md` → "How This Relates to Skills").
+Many skills are just a `SKILL.md` — that is a complete skill. A skill directory is format-identical to a Claude Code / Cursor / skills.sh skill directory: same shape, different delivery lifecycle (`README.md` → "How this relates to installed skills").
+
+**The leaf rule.** A folder holding `SKILL.md` is a skill, and any tree walk **stops there**: a `SKILL.md` nested deeper inside a skill's bundle is that bundle's file, not a second skill. A directory *without* a `SKILL.md` is not an error — it is a **collection**: an index of the skills beneath it, one line per skill, every line itself a valid address.
 
 ## 2. Wire Format: SKILL.md
 
-`SKILL.md` is a single UTF-8 text file consisting of:
-
-1. An optional YAML frontmatter block, delimited by `---` lines.
-2. A markdown body — the instructions given to the agent.
+`SKILL.md` is a single UTF-8 text file: an optional YAML frontmatter block delimited by `---` lines, then a markdown body — the instructions given to the agent.
 
 ```markdown
 ---
@@ -32,227 +31,152 @@ version: 1.0.0
 tags: [testing, methodology]
 ---
 
-# TDD Workflow
+# TDD
 
 1. Write a failing test FIRST
 2. Write the minimum code to make it pass
 3. Refactor only when green
-4. Repeat
 ```
 
 ### Frontmatter fields
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `name` | Yes | string | Unique identifier / slug seed. Lowercase, hyphenated (e.g. `tdd`, `code-review`). |
-| `description` | Yes | string | One-line summary shown in listings, search results, and index-mode previews. Keep under ~120 chars. |
-| `author` | No | string | GitHub username or handle of the workflow's creator. |
-| `version` | No | string (semver) | Version of the workflow content, e.g. `1.0.0`. Defaults to unset/latest. |
-| `tags` | No | string[] | Free-form tags for discovery/filtering (e.g. `["diagrams", "animated"]`). |
+| `name` | Yes | string | Identifier. Lowercase, hyphenated (e.g. `tdd`, `code-review`). |
+| `description` | Yes | string | One-line summary shown in menus and the auto-trigger index. It is the trigger signal — keep it under ~120 chars and meaningful without the body. |
+| `author` | No | string | GitHub username or handle. |
+| `version` | No | string (semver) | Version of the content. Defaults to unset/latest. |
+| `tags` | No | string[] | Free-form tags for discovery/filtering. |
 
-Unknown frontmatter fields MUST be ignored by consumers (forward compatibility) — never rejected. `name` + `description` are the only fields loaded in **index mode** (§7) — keep both meaningful on their own, without the body.
+Unknown frontmatter fields MUST be ignored by consumers (forward compatibility) — never rejected. `name` + `description` are the only fields that become **resident** when a skill auto-triggers (§7) — the body loads on demand.
 
-If frontmatter is missing entirely, the file is still a valid workflow; `name`/`description` fall back to the file path / first heading, but this is discouraged for anything intended to be catalog-listed.
+A skill whose frontmatter lacks `name` or `description` cannot feed the auto-trigger index; a conforming client MUST refuse to `:install` it loudly rather than write a line that silently loads nothing.
 
 ### Body
 
-Everything after the closing `---` is free-form markdown. There is no imposed structure beyond "write instructions an agent can follow." Conventionally: a top-level heading, then numbered or bulleted steps. Code blocks, tables, and Mermaid diagrams are all valid and commonly used.
+Everything after the closing `---` is free-form markdown — instructions an agent can follow. Code blocks, tables, and Mermaid diagrams are all valid.
 
 ## 3. Supporting Directories
 
 | Directory | Purpose | Consumed by |
 |-----------|---------|-------------|
-| `scripts/` | Executable helper scripts (any language/shell) the agent can run as part of following the instructions | Agents with shell/tool execution access (AdaL, Claude Code, Cursor, etc.) |
-| `references/` | Reference documentation, examples, lookup tables the instructions point to | Agents with file-read access; also useful to a human skimming the workflow |
-| `templates/` | Boilerplate files the agent copies or fills in as part of the task | Agents with file-write access |
+| `scripts/` | Executable helpers the agent can run | Agents with shell access |
+| `references/` | Reference docs, examples, lookup tables | Agents with file-read access |
+| `templates/` | Boilerplate the agent copies or fills in | Agents with file-write access |
 
-None of these directories are required, and consumers MAY ignore them entirely if they only support the "fetch one markdown file" minimal integration path (§8.1). They matter for consumers that download the **full directory** — which is what AdaL and other file-system-capable agents do by default (§6, "Full load").
+None are required. A resolved skill is just files on disk, so agents that load skills their own way (`--skill` flags, native folders) consume the same directories untouched.
 
-## 4. API Contracts
+## 4. Addressing — the path is the identity
 
-**Base URL:** `https://adal.sylph.ai`
-
-All endpoints return `application/json`. All GET endpoints below are public — no authentication required. Responses always include a top-level `"success": boolean` field; on failure, an `"error"` string field is included instead of the endpoint-specific payload.
-
-### 4.1 `GET /api/workflows/inventory`
-
-List all publicly indexed workflows.
-
-**Response:**
-```json
-{
-  "success": true,
-  "count": 42,
-  "inventory": [
-    {
-      "slug": "sylphai-inc-glowmotion",
-      "name": "glowmotion",
-      "description": "Create premium animated technical diagrams...",
-      "author": "Aria068",
-      "github_repo": "SylphAI-Inc/skills",
-      "github_path": "skills/glowmotion",
-      "github_skill_path": "gh:SylphAI-Inc/skills/skills/glowmotion",
-      "tags": ["diagrams", "animated"]
-    }
-  ]
-}
+```
+@skills:gh:<owner>/<repo>/<path>     GitHub — any public repo, no packaging step
+@skills:<owner>/<name>               hub — ships later (§9); lowercase, case-folded
+@skills:<path>:save                  copy into the project — to adapt it (§6)
+@skills:<path>:install               one line in .autotrigger — fires on its own (§7)
+@skills:<path>:save:install          both — the suffixes are orthogonal
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `slug` | string | Stable, globally unique identifier for this workflow. Used in `resolve` and `content` endpoints. |
-| `name` | string | The `name` from the SKILL.md frontmatter. |
-| `description` | string | The `description` from the SKILL.md frontmatter. |
-| `author` | string | Author, if present. |
-| `github_repo` | string | `owner/repo` this workflow is indexed from (GitHub-sourced workflows only). |
-| `github_path` | string | Path within the repo to the **workflow directory** (not just SKILL.md). |
-| `github_skill_path` | string | Canonical `gh:owner/repo/path` reference form — resolves the whole directory, usable directly with `@workflow:`. |
-| `tags` | string[] | Tags, if present. |
+- `gh:` paths keep GitHub's casing beyond the marker (GitHub paths are case-sensitive). On disk, `gh:` is spelled `gh/` — folder names cannot hold colons.
+- Pasted GitHub URLs (`github.com/<o>/<r>/tree/<branch>/<path>`, blob URLs, trailing `SKILL.md`) are valid references and normalize to the `gh:` form.
+- The grammar is greedy: the path runs to the end of the token or the trailing suffixes. Several `@skills:` references in one message all load, each at its own point of use.
+- Segment grammar — what characters a path segment may hold — is normative and specified in §8.2.1.
 
-Platform-created (non-GitHub) workflows omit the `github_*` fields — they are markdown-only, with no directory (§9).
-
-### 4.2 `GET /api/workflows/resolve/{slug}`
-
-Resolve a slug to its metadata and source location, without downloading content. This is the step a file-system-capable client uses to get `github_skill_path`/`github_repo`+`github_path` so it can then fetch the **full directory** (SKILL.md + scripts/references/templates) directly from GitHub, rather than only the SKILL.md text via §4.3.
-
-**Response:**
-```json
-{
-  "success": true,
-  "slug": "glowmotion",
-  "source": "github",
-  "github_repo": "SylphAI-Inc/skills",
-  "github_path": "skills/glowmotion",
-  "github_skill_path": "gh:SylphAI-Inc/skills/skills/glowmotion",
-  "metadata": {
-    "name": "glowmotion",
-    "description": "Create premium animated technical diagrams...",
-    "author": "Aria068",
-    "version": null,
-    "tags": ["diagrams", "animated"]
-  }
-}
-```
-
-`source` is `"github"` or `"platform"`. On a miss (unknown slug), respond `404` with `{"success": false, "error": "not_found"}`.
-
-### 4.3 `GET /api/workflows/{slug}/content`
-
-Fetch the raw `SKILL.md` text for a listed slug. **This endpoint returns the entrypoint instructions only — it does not return `scripts/`, `references/`, or `templates/`.** It exists for the minimal-integration path (§8.1): agents that just need instructions in context, with no directory/file handling.
-
-**Response:**
-```json
-{
-  "success": true,
-  "slug": "glowmotion",
-  "content": "---\nname: glowmotion\ndescription: Create premium animated diagrams\n---\n\n# Glowmotion\n\n...",
-  "source": "github"
-}
-```
-
-`content` is the raw, unmodified text of `SKILL.md` (frontmatter included). Consumers should treat it as opaque markdown text and parse the frontmatter themselves if needed.
-
-**To get the full directory instead**, resolve the slug first (§4.2) to get `github_repo`/`github_path`, then fetch that path's tree directly from GitHub (e.g. `git clone`, the GitHub Contents API, or `codeload.github.com`) — see §6/§8.2 for the full-load flow AdaL uses.
-
-### 4.4 `GET /api/workflows/content?github_url=<owner/repo/path>`
-
-Fetch just the `SKILL.md` from any public GitHub path, whether or not it's indexed in the catalog — the escape hatch for the long tail. Same single-file limitation as §4.3 applies.
-
-**Query parameter:**
-- `github_url` — format `owner/repo/path/to/skill-dir` (no scheme, no `github.com/`), e.g. `SylphAI-Inc/skills/skills/glowmotion`.
-
-**Response:** identical shape to §4.3, with `"source": "github"`.
-
-If the path does not contain a `SKILL.md`, respond `404` with `{"success": false, "error": "not_found"}`.
-
-### 4.5 `POST /api/workflows/create`
-
-Create a platform-hosted (DB-backed) workflow. **Requires authentication.** Platform-created workflows are markdown-only — no `scripts/`/`references/`/`templates/` support (§9).
-
-**Request:**
-```json
-{
-  "name": "my-workflow",
-  "description": "One-line summary",
-  "content": "Full instructions as plain markdown/text"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "slug": "my-workflow-x7f2",
-  "url": "https://adalagent.ai/workflows/my-workflow-x7f2"
-}
-```
-
-## 5. Authentication
-
-- All read endpoints (`inventory`, `resolve`, `content`) are **public, unauthenticated**.
-- `POST /api/workflows/create` requires a valid session (Clerk-authenticated) since it writes to the platform's workflow catalog.
-- No API key is required or issued for read access — this is intentional. The protocol's minimal-integration path (curl → SKILL.md → agent context) must work with zero setup.
-
-## 6. Consumption Modes
-
-A client resolving a workflow reference (e.g. `@workflow:<id>`) chooses one of three modes:
-
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| **Full load** (default) | plain `@workflow:<id>` | Download the entire directory (SKILL.md + scripts/references/templates) into the resolution tier's storage (§7); inject `SKILL.md` into the agent's context; make scripts/references available on disk for the agent to read/execute. |
-| **Index mode** | `@workflow:<id>:index` | Load only the YAML frontmatter (`name` + `description`) into context — a cheap preview. The agent decides whether the workflow is relevant, and only then fetches the full `SKILL.md`/directory. Useful when surfacing many candidate workflows without spending context budget on all of them upfront. |
-| **Saved mode** | `@workflow:<id>:save` | Same as full load, but the downloaded directory is also persisted to `.workflows/<id>/` in the project (git-trackable, available offline in future sessions) instead of only living in the ephemeral session cache. |
-
-Consumers that only support the minimal single-file integration (§8.1) effectively only implement a stripped-down "full load" — content-only, no directory, no local persistence tier.
-
-## 7. Resolution Order (client-side convention)
-
-Agents with local file-system access (AdaL, Claude Code, Cursor, etc.) SHOULD resolve a workflow reference in this order, so that project-local customization always wins and network access is only used when necessary:
+## 5. Resolution — local first, by path, through a validating cache
 
 ```mermaid
 flowchart TD
-    START["workflow reference (e.g. @workflow:slug)"] --> LOCAL{".workflows/slug/ exists locally?"}
-    LOCAL -->|YES| LOAD_LOCAL["Load full directory from local dir\n(permanent, git-tracked, offline)"]
-    LOCAL -->|NO| SESSION{"session cache exists?\n(~/.adal/sessions/&lt;sid&gt;/workflows/slug/)"}
-    SESSION -->|YES| LOAD_SESSION["Load full directory from session cache\n(ephemeral)"]
-    SESSION -->|NO| ONLINE["Resolve via platform API (§4.1-4.4)"]
-    ONLINE --> FOUND{"Found?"}
-    FOUND -->|NO| ERROR["Not found"]
-    FOUND -->|YES| DOWNLOAD["Download full directory\n(GitHub tree, or SKILL.md-only for platform-hosted)\n→ session cache"]
-    DOWNLOAD --> SAVEFLAG{":save flag? (§6)"}
-    SAVEFLAG -->|YES| PERSIST["Also copy → .workflows/slug/\n(permanent, git-trackable)"]
-    SAVEFLAG -->|NO| DONE["Ephemeral for this session only"]
+    A["@skills:path"] --> B{"folder at .atskills/path ?"}
+    B -- "yes" --> L["yours — read it, done"]
+    B -- "no" --> W{"cloud — changed? (one revision probe)"}
+    W -- "unchanged" --> C["cache, instant"]
+    W -- "changed" --> F["download fresh"]
+    W -- "unreachable" --> O{"cache has it?"}
+    O -- "yes" --> S["cached, marked stale"]
+    O -- "no" --> X["fail, say why"]
 ```
 
-1. **Project-local** — check `.workflows/<slug>/` in the current working directory / repo. Full directory, permanent, version-controlled, always wins, works offline.
-2. **Session cache** — `~/.adal/sessions/<session-id>/workflows/<slug>/`, an ephemeral cache scoped to the current agent session. Cleared when the session ends (unless promoted via `:save`).
-3. **Online (this protocol)** — fall back to the API endpoints in §4. Explicit GitHub paths (`gh:owner/repo/path`) bypass slug resolution and fetch the directory directly.
+1. **Local first, by path.** A folder at `.atskills/<path>` (`gh:` spelled `gh/`) is the project's own and always answers; no folder there means the path means the cloud. Nothing else is consulted — in particular `.source` (§6) is **never** read to resolve. A saved copy answers its own address because it *sits* at that address (vendoring — Go's `vendor/`, node's `node_modules/@scope`).
+2. **Else the cloud, through the global cache.** Cloud content materializes under one machine-wide, agent-neutral root — `~/.atskills/cache/<disk path>` — shared by every conforming client. The cache validates like a browser: each use asks the source "did this change?" (one revision probe, never a re-download); unchanged serves the cache instantly, changed fetches fresh, unreachable serves the cache with a stale warning, unreachable-with-nothing-cached fails and says exactly why. Entries are always safe to delete; the path re-resolves.
+3. **A directory is a menu.** No `SKILL.md` at the path → list the skills beneath it (leaf rule), one line per skill, `path: description`, subject to the collection cap (§8.3). Browsing and using are the same gesture; a collection is taken subtree by subtree, at any granularity, and the cache means narrowing never re-pays for what already landed.
 
-Agents without file-system access (e.g. a stateless chat completion call) simply skip straight to step 3 on every invocation, using the content-only endpoints (§4.3/§4.4), and rely on their own caller-side caching for the equivalent of the session-cache tier.
+**Transport (GitHub).** The reference transport is git itself: one shallow, blob-filtered, sparse clone of the referenced sub-path (`--depth 1 --filter=blob:none`, `--no-checkout` for the pre-count in §8.3, `sparse-checkout` for the subtree), and `git ls-remote` for the change probe. This is deliberate: one negotiated round trip, no API quota, private repos work through the user's existing git credentials, and revisions come for free — the probe is a commit hash and a pinned-revision fetch (§6) is a plain fetch-by-sha. A machine without git gets one clear error naming the missing tool.
 
-This resolution order is a **recommendation for a good client implementation**, not a protocol requirement — the only hard requirements are the directory/wire format (§1-§2) and API contracts (§4).
+## 6. Save = adapt + detach
+
+`:save` copies the skill (or a whole collection subtree) to `.atskills/<path>/` — the ID's own path — and **detaches** it: the copy is the project's file from that moment. Provenance is one `.source` stamp at the top of whatever was saved, two lines, written once:
+
+```
+gh:stripe/agent-toolkit
+2026-08-01 rev:abc123...
+```
+
+Line 1 is the origin ID; line 2 the date and upstream revision taken. Pure provenance — the resolver never reads it, nothing syncs against it; deleting it detaches fully. No `.source` = the project wrote it. The closest `.source` at or above a skill is its origin, so one directory save covers every child with one stamp.
+
+**No update lifecycle.** Save-again is the only refresh, on the user's ask, and it is conflict-safe: an **unedited** copy — verified by re-fetching upstream *at the recorded revision* (immutable, fetchable by hash) and comparing bytes — is replaced and line 2 rewritten. An **edited** or unverifiable copy is a conflict: touch nothing, and list the ways out (keep yours · delete-and-resave · agent merge with line 2 as base). No digests, no staging state beyond the two lines. **No version pinning, ever**: a skill documents a living service; the two honest relationships are *follow* (§7) and *own* (this section).
+
+## 7. `.autotrigger` — install is a line
+
+One file, `.atskills/.autotrigger`, governs everything that fires on its own. It works like `.gitignore`: one entry per line, `#` comments, duplicates load once.
+
+```
+sec-checklist                       plain — a gitignore PATTERN over .atskills/
+team-flows/                         plain — every skill under that directory
+!team-flows/experimental            negation — carve-outs compose as in git
+@gh:stripe/agent-toolkit/payments   cloud — follows the provider's latest
+@gh:stripe/agent-toolkit/           trailing / — the whole directory
+```
+
+- Plain lines form **one** gitignore ruleset over the local skill tree (globs and `!` negation included).
+- `@` lines resolve **local-first** like everything else, so a saved copy answers its own `@` line.
+- At session start, each resident skill contributes **frontmatter only** (name + description, ~50–100 tokens); bodies load on trigger. Cloud lines refresh once per session through the cache (§5); offline serves the last cached copy, marked stale.
+- Per-line failures are isolated: a line that loads nothing is reported once and the session goes on.
+- Install = adding a line; uninstall = removing it. The `:install` suffix, the `/skills` checkbox surface, and hand edits all write the same lines.
+
+**The management surface.** Every conforming client SHOULD ship `/skills`: a checkbox tree over `.autotrigger` and `.atskills/` (states: `[x]` own line · `[#]` covered by a directory line · `[~]` partial), where unchecking under a covering directory line **splits** it into explicit lines for the siblings that stay on — the file always reads true — plus *view prompt*: the exact injected text, verbatim, with its token count. The surface holds no state beyond the files.
 
 ## 8. For Agent Builders
 
-### 8.1 Minimal integration (5 minutes) — instructions only
+### 8.1 Zero integration — one instruction file
 
-1. Fetch the SKILL.md content via the API:
-   ```bash
-   curl -s https://adal.sylph.ai/api/workflows/<slug>/content | jq -r '.content'
-   ```
-2. Inject the returned `content` into the agent's context.
-3. Done. No directory handling, no scripts/references support.
+Hand the agent [`SKILLS.md`](./SKILLS.md). Any agent that can read files, run shell commands, and fetch URLs becomes a full client — resolution, cache discipline, save, trigger, and safety rules included. Alternatively shell out to the reference CLI (`atskills get / save / triggers / prompt / skills`) and inherit all of it without implementing anything.
 
-### 8.2 Full integration (1 hour) — full directory support
+### 8.2 Native integration — the `@skills:` affordance
 
-1. Add an `@workflow:<slug>` reference (or equivalent command) to your agent.
-2. Resolve the slug first: `GET /api/workflows/resolve/{slug}` (§4.2) to get `github_repo` + `github_path` (or a direct `github_skill_path`).
-3. Fetch the **full directory** from that GitHub path (clone, GitHub Contents API, or download-and-extract a tarball) — this is what gets you `scripts/`, `references/`, and `templates/`, not just `SKILL.md`.
-4. Inject `SKILL.md`'s content into the agent's context; make the rest of the directory available on disk for the agent's file-read/execute tools.
-5. For unlisted skills, use `github_url=<path>` directly against `resolve`/`content` (§4.4) instead of a slug.
-6. Implement the resolution order in §7 if you want local-first behavior (project `.workflows/`, session cache) rather than fetching fresh every time.
+1. Detect `@skills:` references exactly where `@file` mentions already are; resolve by §5; stream content into context at the point of use.
+2. Autocomplete **what the project knows**: its local skills and the cloud IDs in `.autotrigger`. Nothing else — for the world the user types or pastes a path; discovery is a search problem, not an input-box problem.
+3. Build the residency block (§7) client-side and hand your model-serving layer **one string** to splice into the prompt. The host needs zero protocol logic, so the serving layer's language is irrelevant — this is how AdaL integrates (TypeScript client, Python host).
+4. A TypeScript protocol core with type declarations ships in [`src/`](./src) for builders who want a library instead of a port.
 
-Platform-hosted workflows (`source: "platform"`) never have a directory to fetch — `content` from §4.3 is the entire workflow for those.
+### 8.2.1 Path segment grammar — if GitHub can serve it, the protocol accepts it
+
+An address has **two spellings**, and implementations MUST distinguish them:
+
+| Spelling | Used by | Example |
+|---|---|---|
+| **Canonical** | git, the trees API, the filesystem, storage | `gh:o/r/skills/API Gateway` |
+| **Reference** | what a person types; what a copy button emits | `gh:o/r/skills/API%20Gateway` |
+
+`normalizeId` MUST percent-**decode** each segment and return the canonical form, so what reaches git is the directory that actually exists. The reference spelling percent-encodes exactly two characters inside a segment — a **space** (because `@skills:<path> <prompt>` is whitespace-delimited) and **`:`** (because it marks the `:save`/`:install` suffixes). The `gh:` marker is grammar, not a segment, and stays literal.
+
+A canonical segment is invalid only when it cannot denote a directory:
+
+| Refused | Why |
+|---|---|
+| `/` `\` | separators |
+| control characters | unrepresentable |
+| the exact segments `.` and `..`, or empty | traversal / malformed |
+
+Everything else is valid — spaces, leading dots, leading underscores, `@`, parentheses, non-ASCII.
+
+**Decoding MUST happen before validation.** Otherwise `%2F` and `%2E%2E` smuggle a path apart after the checks have run.
+
+**This is normative because the obvious alternatives are both wrong.** An allowlist of `[A-Za-z0-9._-]` requiring an alphanumeric first character — the rule this replaced — rejected **6,776 of 56,825 published skills**: everything under `.claude/`, `.agents/`, `.gemini/`, `.kiro/` and `.atskills/` (this protocol's own directory), plus `_official`, `@scope`, Chinese names, and `API Gateway`. Of the dot-directory skills alone, 4,206 exist nowhere else in the corpus.
+
+Merely *rejecting* spaces is also wrong, and worse than it looks: a pasted GitHub URL already carries `%20`, so without decoding the segment stayed literally `API%20Gateway` — which the grammar accepted and no repository could answer. **A silently broken reference is worse than a refused one.**
+
+Traversal safety does not rest on the character set: `.` and `..` are rejected explicitly after decoding, and implementations MUST also confine writes to the skills root (`safeJoin`).
+
+Correspondingly, a directory walk MUST NOT skip directories merely for beginning with a dot. Only git's object store (`.git`) is excluded. Skipping all dot-directories makes local resolution disagree with remote listing — the GitHub trees API has no such filter — so a skill visible on GitHub disappears the moment it is saved.
 
 ### 8.3 The collection cap — 128 skills per reference
 
@@ -282,43 +206,10 @@ Reference a specific skill, or one of the collections inside it:
 
 A refusal is not a loss of access. Any sub-path stays resolvable, and because both transports fetch subtrees (sparse checkout / per-path fetch), narrowing costs no more than the refused call would have.
 
-## 9. Platform-Hosted Workflows Are Markdown-Only
+## 9. The Hub — ships later; nothing depends on it
 
-Workflows created via `POST /api/workflows/create` (or the `adalagent.ai/workflows/create` UI) are stored as a single markdown string in the platform database — there is no directory, no `scripts/`/`references/`/`templates/` support for this creation path. This is an intentional MVP simplification aimed at non-technical authors who just want to publish a prompt/playbook without touching GitHub. If a workflow needs the full directory power, author it on GitHub (§8, `CONTRIBUTING.md` → Option A) instead.
+`gh:` paths and local folders resolve with zero hub involvement, forever — that is what makes this a protocol rather than a service. The hub (`atskills.one`) will add what a file tree cannot do for itself: search over the public corpus, visual management, one-screen authoring for non-developers, and private/team hosting for `<owner>/<name>` IDs. Hub reads will be plain HTTP GETs anyone can mirror; the interface will be specified here when it ships, and GitHub-hosted skills will keep their `gh:` identity even when the hub indexes or serves them — hosting is the only thing that grants a name.
 
-## 10. Rate Limits
+## 10. Versioning of this Protocol
 
-- Unauthenticated GET endpoints are capped at **100 requests/minute** per client IP.
-- Exceeding the limit returns `429 Too Many Requests` with:
-  ```json
-  {"success": false, "error": "rate_limited", "retry_after_seconds": 42}
-  ```
-- There is no rate limit workaround via authentication for read endpoints — the limit is generous enough for normal agent usage (fetch-once-per-invocation), and is meant to prevent abusive scraping, not to gate legitimate integrations. If your use case needs sustained high-volume access, open an issue.
-
-## 11. Caching Strategy
-
-- **Server-side**: GitHub-sourced content is cached at the API layer with a short TTL to avoid hitting GitHub's own rate limits on every request; the catalog inventory is refreshed on an indexing cadence, not on every read.
-- **Client-side (recommended)**: Consumers SHOULD cache a fetched workflow (directory or content) for the duration of a single agent session/task and re-fetch on the next session, rather than re-fetching on every turn — this is exactly the session-cache tier in §7.
-- Cached content MAY be stale relative to the upstream GitHub directory for the duration of the server-side TTL. There is currently no cache-busting query parameter — if you need guaranteed-fresh content, fetch directly from GitHub's own APIs instead of this protocol's endpoints.
-
-## 12. Error Handling
-
-All error responses use the same envelope:
-
-```json
-{"success": false, "error": "<error_code>", "detail": "<human-readable message>"}
-```
-
-| `error` code | HTTP status | Meaning |
-|--------------|-------------|---------|
-| `not_found` | 404 | Slug or GitHub path does not resolve to a workflow directory with a `SKILL.md`. |
-| `rate_limited` | 429 | Client exceeded the rate limit in §10. |
-| `invalid_github_url` | 400 | `github_url` param is malformed (wrong format, missing path segments). |
-| `unauthorized` | 401 | Auth required (write endpoints) but missing/invalid credentials. |
-| `internal_error` | 500 | Unexpected server-side failure. Safe to retry with backoff. |
-
-Consumers should treat any non-`2xx` response as a failure and fall back gracefully (e.g. skip the workflow, or prompt the user) rather than crashing the calling agent.
-
-## 13. Versioning of this Protocol
-
-This is an MVP. Additive, backward-compatible changes (new optional fields, new endpoints) will not bump a version number. Any breaking change to the wire format, directory structure, or existing endpoint contracts will be announced via this repo's issues/releases before rollout.
+Additive, backward-compatible changes (new optional frontmatter fields, new client affordances) will not bump a version number. Any breaking change to the directory format, addressing grammar, resolution, save, or `.autotrigger` semantics will be called out explicitly in this repo's issues/releases before rollout — and a behavior is protocol behavior only if a test in [`tests/`](./tests/README.md) pins it.

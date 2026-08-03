@@ -21,7 +21,7 @@ export declare const MAX_COLLECTION_SKILLS = 128;
 export declare const AUTOTRIGGER_FILE = ".autotrigger";
 export declare const SOURCE_FILE = ".source";
 /**
- * Accept pasted GitHub URLs, exactly like the old @workflow resolver did:
+ * Accept pasted GitHub URLs:
  * `github.com/owner/repo[/tree/<branch>|/blob/<branch>]/path` → `gh:owner/repo/path`
  * (the tree/blob + branch pair is spliced out; a trailing SKILL.md drops).
  */
@@ -52,12 +52,10 @@ export interface SkillReference {
     wholeDir: boolean;
     save: boolean;
     install: boolean;
-    /** Legacy `@workflow:…:index` — frontmatter only. Undocumented, still honored. */
-    index: boolean;
 }
 /**
  * `@skills:<path>[:save][:install]` — the path is greedy until the trailing
- * suffixes, which combine in any order. `@workflow:` is a silent alias for the
- * same grammar. Throws (via normalizeId) on an unusable path.
+ * suffixes, which combine in any order. Throws (via normalizeId) on an
+ * unusable path.
  */
 export declare function parseReference(raw: string): SkillReference;

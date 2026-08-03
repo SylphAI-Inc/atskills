@@ -1,7 +1,7 @@
 ---
 name: code-review
 description: Perform a thorough, structured code review of a diff or pull request
-author: agentworkflows
+author: sylphai-inc
 version: 1.0.0
 tags: [review, quality]
 ---
