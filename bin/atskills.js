@@ -1,126 +1,139 @@
 #!/usr/bin/env node
 'use strict';
 // atskills — reference CLI for the @skills protocol.
-// Thin porcelain over lib/: get / save / triggers / prompt / skills.
-// SKILLS.md in this repo is the spec; lib/ is the executable version of it.
+// Thin porcelain over dist/ (the ONE implementation, built from src/).
+// SKILLS.md in this repo is the spec; src/ is the executable version of it.
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { Cache, DEFAULT_DIR } = require('../lib/cache');
-const { normalizeId, diskPath, isGh } = require('../lib/ids');
-const { findAtskills } = require('../lib/fsx');
-const { resolve } = require('../lib/resolve');
-const { save } = require('../lib/save');
-const trigger = require('../lib/autotrigger');
-const { buildPrompt } = require('../lib/prompt');
-const ui = require('../lib/ui');
+const A = require('../dist/index.js');
 
 const err = (s) => process.stderr.write(s + '\n');
 const out = (s) => process.stdout.write(s + '\n');
+const short = (p) => (p ? String(p).replace(os.homedir(), '~') : p);
+const approxTokens = (s) => Math.ceil(String(s).length / 4);
 
-function cache() {
-  return new Cache(undefined, { log: (_lvl, msg) => err(`! ${msg}`) });
+/** SkillResolverOpts for the current directory; warnings go to stderr. */
+function optsHere() {
+  const root = A.findAtskills(process.cwd());
+  return {
+    workingDir: root ? path.dirname(root) : process.cwd(),
+    // Porcelain seam only — the package itself never reads env.
+    cacheDir: process.env.ATSKILLS_CACHE || undefined,
+    log: { info: () => {}, warn: (m) => err(`! ${m}`) },
+  };
 }
 
 function requireRoot() {
-  const root = findAtskills(process.cwd());
+  const root = A.findAtskills(process.cwd());
   if (!root) throw new Error('no .atskills/ found here or above — create one: mkdir .atskills');
   return root;
 }
 
 // get — use a skill: prints SKILL.md; a directory prints a menu. Never installs.
 async function cmdGet(rawId) {
-  const id = normalizeId(rawId);
-  const root = findAtskills(process.cwd());
-  const res = await resolve(cache(), id, root);
+  const id = A.normalizeId(rawId);
+  const opts = optsHere();
+  const res = await A.resolveSkill(id, false, opts);
+  if (!res.success) throw new Error(res.error || `nothing at ${id}`);
 
-  const home = require('os').homedir();
-  const short = (p) => (p ? String(p).replace(home, '~') : p);
   if (res.kind === 'skill') {
-    // The badge shows a LOCAL path — the project file, or the cached
-    // copy's tree path for cloud skills.
-    const where =
-      res.where === 'local'
-        ? `${path.relative(process.cwd(), res.dir)}/SKILL.md${res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : ''}`
-        : `${short(res.cachePath)} (cloud·${res.status})  ·  review: ${require('../lib/sources').webUrl(id)}`;
-    err(`⎿ read ${where} (${res.text.trimEnd().split('\n').length} lines)`);
+    const local = res.source === 'local';
+    const dir = path.dirname(res.path);
+    // The badge shows a LOCAL path — the project file, or the cached copy's
+    // tree path for cloud skills.
+    let where;
+    if (local) {
+      const stamp = A.nearestSource(dir, A.skillsRoot(opts.workingDir));
+      where = `${path.relative(process.cwd(), res.path)}${stamp ? `  (saved from ${stamp.id}, ${stamp.taken})` : ''}`;
+    } else {
+      where = `${short(res.path)} (cloud·${res.served || 'fresh'})  ·  review: ${res.reviewUrl || A.webUrl(id)}`;
+    }
+    err(`⎿ read ${where} (${res.content.trimEnd().split('\n').length} lines)`);
     // ...and list the skill's directory too (read + list, the @file/@dir hybrid).
-    let bundled = [];
-    try {
-      if (res.where === 'local') {
-        const walk = (d, rel) =>
-          require('fs').readdirSync(d, { withFileTypes: true }).flatMap((e) => {
-            if (e.name.startsWith('.')) return [];
-            const r = rel ? `${rel}/${e.name}` : e.name;
-            return e.isDirectory() ? walk(path.join(d, e.name), r) : [r];
-          });
-        bundled = walk(res.dir, '').filter((f) => f !== 'SKILL.md');
-      } else if (isGh(id)) {
-        const sources = require('../lib/sources');
-        bundled = (await sources.listGhFiles(cache(), id)).filter((f) => f !== 'SKILL.md');
-      }
-    } catch { bundled = []; }
+    const bundled = (res.files || []).filter((f) => f !== 'SKILL.md' && !f.startsWith('.'));
     if (bundled.length) {
-      const localDir = res.where === 'local'
-        ? path.relative(process.cwd(), res.dir)
-        : short(path.dirname(res.cachePath));
-      err(`⎿ listed directory ${localDir}/ (${bundled.length + 1} items)`);
+      err(`⎿ listed directory ${local ? path.relative(process.cwd(), dir) : short(dir)}/ (${bundled.length + 1} items)`);
       for (const f of bundled) err(`  - ${f}`);
     }
-    process.stdout.write(res.text);
+    process.stdout.write(res.content);
     return;
   }
-  const dirShown = res.where === 'local' ? path.join('.atskills', diskPath(id)) : short(res.cacheDir);
-  err(`⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${require('../lib/sources').webUrl(id)}`}`);
-  for (const e of res.entries) out(`- ${e.name}: ${e.description} (${short(e.file) || e.id}${e.bundle && e.bundle.length ? ' · dir: ' + e.bundle.join(', ') : ''})`);
+
+  const local = res.source === 'local';
+  err(`⎿ read skills directory ${local ? path.relative(process.cwd(), res.dir) : short(res.dir)}/ (${res.entries.length} skills)${local ? '' : ` (cloud)  ·  review: ${res.reviewUrl || A.webUrl(id)}`}`);
+  for (const e of res.entries) out(`- ${e.name}: ${e.description} (${short(e.path)}${e.bundle && e.bundle.length ? ' · dir: ' + e.bundle.join(', ') : ''})`);
 }
 
 // save — copy to .atskills/<path>/ + two-line .source. Save = adapt + detach.
 async function cmdSave(rawId) {
-  const id = normalizeId(rawId);
-  const root = findAtskills(process.cwd()) || path.join(process.cwd(), '.atskills');
-  try {
-    const r = await save(cache(), id, root);
-    out(`${r.action === 'updated' ? 'updated' : 'saved'}: .atskills/${diskPath(id)}/ — yours now, detached`);
-    out(`.source records ${id} @ ${String(r.revision).slice(0, 7)}`);
-    if (r.executables.length) out(`bundled executables (review before running): ${r.executables.join(', ')}`);
-    if (trigger.hasLine(root, '@' + id)) {
-      out(`note: .autotrigger has "@${id}" — your copy now answers it; flip the line to "${diskPath(id)}" so the file reads true`);
-    }
-  } catch (e) {
-    throw e;
+  const id = A.normalizeId(rawId);
+  const opts = optsHere();
+  const res = await A.saveSkillToProject(id, opts);
+  if (!res.success) throw new Error(res.error || `could not save ${id}`);
+
+  const root = A.skillsRoot(opts.workingDir);
+  const dest = A.safeJoin(root, A.diskPath(id));
+  const stamp = A.nearestSource(dest, root);
+  out(`saved: .atskills/${A.diskPath(id)}/ — yours now, detached`);
+  if (stamp) out(`.source records ${stamp.id} @ ${String(stamp.revision).slice(0, 7)}`);
+  const executables = A.listFiles(dest).filter((f) => {
+    try { return (fs.statSync(path.join(dest, f)).mode & 0o111) !== 0; } catch { return false; }
+  });
+  if (executables.length) out(`bundled executables (review before running): ${executables.join(', ')}`);
+  if (A.hasTriggerLine(root, '@' + id)) {
+    out(`note: .autotrigger has "@${id}" — your copy now answers it; flip the line to "${A.diskPath(id)}" so the file reads true`);
   }
 }
 
 // triggers — what fires on its own, per .atskills/.autotrigger.
 async function cmdTriggers() {
   const root = requireRoot();
-  const entries = await trigger.expand(cache(), root);
-  if (!entries.length) {
+  const opts = optsHere();
+  const resident = A.expandLocalTriggers(root);
+  if (!resident.length) {
     out('no .autotrigger entries — nothing fires on its own');
     return;
   }
-  for (const e of entries) {
-    if (e.error) out(`✗ ${e.line} — ${e.error}`);
-    else out(`● ${e.line.padEnd(36)} [${e.where}${e.status ? '·' + e.status : ''}]  ${e.fm.name}: ${e.fm.description}`);
+  let tokens = 0;
+  for (const e of resident) {
+    if (e.error) { out(`✗ ${e.line} — ${e.error}`); continue; }
+    if (e.where !== 'cloud') {
+      out(`● ${e.line.padEnd(36)} [${e.where}]  ${e.fm.name}: ${e.fm.description}`);
+      tokens += approxTokens(`- ${e.fm.name}: ${e.fm.description}`);
+      continue;
+    }
+    // Cloud line with no local copy: resolve through the global cache.
+    const res = await A.resolveSkill(e.id, false, opts);
+    if (!res.success) { out(`✗ ${e.line} — ${res.error}`); continue; }
+    if (res.kind === 'skill') {
+      const fm = A.frontmatter(res.content);
+      out(`● ${e.line.padEnd(36)} [cloud·${res.served || 'fresh'}]  ${fm.name}: ${fm.description}`);
+      tokens += approxTokens(`- ${fm.name}: ${fm.description}`);
+    } else {
+      out(`● ${e.line.padEnd(36)} [cloud·${res.served || 'fresh'}]  directory: ${res.entries.length} skills`);
+      for (const row of res.entries) tokens += approxTokens(`- ${row.name}: ${row.description}`);
+    }
   }
-  out(`— ~${trigger.residentTokens(entries)} resident tokens (frontmatter only; bodies load on trigger)`);
+  out(`— ~${tokens} resident tokens (frontmatter only; bodies load on trigger)`);
 }
 
-// prompt — the exact injected text, verbatim, with the read trail.
+// prompt — the exact injected text, verbatim, plus every problem hit on the way.
 async function cmdPrompt() {
-  const root = requireRoot();
-  const { text, tokens, sections } = await buildPrompt(cache(), root);
+  requireRoot();
+  const notes = [];
+  const opts = { ...optsHere(), log: { info: () => {}, warn: (m) => notes.push(m) } };
+  const text = await A.buildAutotriggerIndex(opts);
   if (!text) {
     out('(nothing auto-triggers — the injected prompt is empty)');
+    for (const n of notes) err(`  ✗ ${n}`);
     return;
   }
-  process.stdout.write(text);
+  process.stdout.write(text.endsWith('\n') ? text : text + '\n');
   err('');
-  err(`— ~${tokens} tokens, read from:`);
-  for (const s of sections) {
-    if (s.error) err(`  ✗ ${s.line}  ${s.error}`);
-    else err(`  ⎿ read ${String(s.ref).replace(require('os').homedir(), '~')}${s.web ? '  ·  review: ' + s.web : ''}`);
-  }
+  err(`— ~${approxTokens(text)} tokens`);
+  for (const n of notes) err(`  ✗ ${n}`);
 }
 
 // skills — the interactive console (non-technical users). Prefers the
@@ -130,7 +143,6 @@ async function cmdSkills() {
   const root = requireRoot();
   if (process.env.ATSKILLS_UI !== 'basic') {
     const { spawnSync } = require('child_process');
-    const fs = require('fs');
     const uiDir = path.join(__dirname, '..', 'ui');
     const app = path.join(uiDir, 'skills.tsx');
     const hasBun = spawnSync('bun', ['--version'], { stdio: 'ignore' }).status === 0;
@@ -140,14 +152,14 @@ async function cmdSkills() {
         const install = spawnSync('bun', ['install'], { cwd: uiDir, stdio: 'inherit' });
         if (install.status !== 0) {
           err('install failed — falling back to the basic console');
-          return ui.run(cache(), root);
+          return require('./ui-basic.js').run(root);
         }
       }
       const run = spawnSync('bun', [app], { stdio: 'inherit', cwd: process.cwd() });
       process.exit(run.status || 0);
     }
   }
-  await ui.run(cache(), root);
+  await require('./ui-basic.js').run(root);
 }
 
 const HELP = `atskills — reference CLI for the @skills protocol
@@ -161,7 +173,7 @@ const HELP = `atskills — reference CLI for the @skills protocol
 
 paths   owner/path = hub · gh:owner/repo/path = github (on disk: gh/…) · lowercase
 rules   local path answers first · using never installs · follow theirs, own yours
-cache   ${DEFAULT_DIR}  (validating, like a browser; always safe to delete)
+cache   ~/.atskills/cache  (validating, like a browser; always safe to delete)
 `;
 
 /**
@@ -188,7 +200,7 @@ async function cmdPaths() {
     const line = raw.trim();
     if (!line) continue;
     try {
-      lines.push(JSON.stringify({ path: line, ok: true, id: normalizeId(line) }));
+      lines.push(JSON.stringify({ path: line, ok: true, id: A.normalizeId(line) }));
       ok++;
     } catch (e) {
       lines.push(JSON.stringify({ path: line, ok: false, error: e.message }));
