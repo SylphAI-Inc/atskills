@@ -62,7 +62,12 @@ export interface SkillResolverOpts {
    * Entries are always safe to delete; the path re-resolves.
    */
   cacheDir?: string;
-  /** Hub/registry base URL for non-`gh:` IDs. */
+  /**
+   * Hub/registry base URL for non-`gh:` IDs — OPT-IN. The protocol needs no
+   * hub: `gh:` paths and local folders resolve without one, forever. A host
+   * that wants hub IDs configures its registry here; without it, a hub-style
+   * reference fails fast with a message instead of a network call.
+   */
   registryBaseUrl?: string;
   /**
    * Base URL that `gh:owner/repo` remotes resolve under. Defaults to
@@ -788,7 +793,13 @@ function swapIntoPlace(staging: string, dest: string): void {
 /** Is there a SKILL.md at exactly this path? The one question that decides. */
 /** Resolve a hub/registry ID and materialize it at `dest`. */
 async function downloadRegistry(skillId: string, dest: string, opts: SkillResolverOpts): Promise<void> {
-  const base = opts.registryBaseUrl || 'https://adal.sylph.ai/api/atskills';
+  const base = opts.registryBaseUrl;
+  if (!base) {
+    throw new Error(
+      `'${skillId}' is a hub path, and no registry is configured. ` +
+      `Use a gh:owner/repo/path reference (needs no hub), or set registryBaseUrl.`,
+    );
+  }
   let data: {
     entry?: { content?: string; github_skill_path?: string; github_repo?: string; github_path?: string };
   };
