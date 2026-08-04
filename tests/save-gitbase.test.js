@@ -125,6 +125,46 @@ test('cap on the save path: refusal is a verdict — no fallback, nothing create
   );
 });
 
+test('parent save ABSORBS unedited saved children — the collection is a superset', async () => {
+  makeRemote('acme', 'nest', {
+    'skills/alpha/SKILL.md': '---\nname: alpha\ndescription: a\n---\nb\n',
+    'skills/beta/SKILL.md': '---\nname: beta\ndescription: b\n---\nb\n',
+  });
+  const { root, opts } = project();
+
+  // Save ONE child — this creates the parent namespace with no .source of its own.
+  const child = await saveSkillToProject('gh:acme/nest/skills/alpha', opts);
+  assert.equal(child.success, true);
+
+  // Saving the PARENT widens the copy: the unedited child is absorbed, the
+  // whole collection lands, provenance moves to ONE stamp at the parent.
+  const parent = await saveSkillToProject('gh:acme/nest/skills', opts);
+  assert.equal(parent.success, true);
+  assert.match(parent.warning, /superset/);
+  const dest = path.join(root, diskPath('gh:acme/nest/skills'));
+  assert.ok(fs.existsSync(path.join(dest, '.source')), 'parent-level .source');
+  assert.ok(!fs.existsSync(path.join(dest, 'alpha', '.source')), 'child stamp replaced by the parent stamp');
+  assert.ok(fs.existsSync(path.join(dest, 'alpha', 'SKILL.md')), 'absorbed child present');
+  assert.ok(fs.existsSync(path.join(dest, 'beta', 'SKILL.md')), 'sibling gained by the superset');
+});
+
+test('parent save refuses when a saved child was EDITED — and names it', async () => {
+  makeRemote('acme', 'nest2', {
+    'skills/alpha/SKILL.md': '---\nname: alpha\ndescription: a\n---\nb\n',
+    'skills/beta/SKILL.md': '---\nname: beta\ndescription: b\n---\nb\n',
+  });
+  const { root, opts } = project();
+  await saveSkillToProject('gh:acme/nest2/skills/alpha', opts);
+  fs.appendFileSync(path.join(root, diskPath('gh:acme/nest2/skills/alpha'), 'SKILL.md'), '\nhouse rules\n');
+
+  const parent = await saveSkillToProject('gh:acme/nest2/skills', opts);
+  assert.equal(parent.success, false);
+  assert.match(parent.error, /edited saved skill/);
+  assert.match(parent.error, /alpha/);
+  // The edited copy stays untouched.
+  assert.match(fs.readFileSync(path.join(root, diskPath('gh:acme/nest2/skills/alpha'), 'SKILL.md'), 'utf8'), /house rules/);
+});
+
 test('a single skill with a huge bundle is never refused — the cap counts skills', async () => {
   const files = { 'solo/SKILL.md': '---\nname: solo\ndescription: one\n---\nb\n' };
   for (let i = 0; i < 200; i++) files[`solo/references/r${i}.md`] = `ref ${i}`;

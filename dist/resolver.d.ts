@@ -102,16 +102,6 @@ export declare class SkillCollectionTooLargeError extends Error {
  * files, so a legitimately large single skill is never refused.
  */
 export declare function assertCollectionFits(entries: TreeEntry[], owner: string, repo: string, sub: string): void;
-/**
- * Save = adapt + detach. The copy lands at the ID's own path under
- * `.atskills/` with one two-line `.source` at the top of what was saved.
- *
- * Save-again is answered by `.source` line 2, and nothing else: an UNEDITED
- * copy (still byte-identical to upstream at the recorded revision) is
- * replaced; an edited — or unverifiable — copy is a conflict, and a conflict
- * touches nothing and lists the ways out. No digests, no staging dirs, no
- * stored state beyond the two lines.
- */
 export declare function saveSkillToProject(id: string, opts: SkillResolverOpts): Promise<LoadResponse>;
 /** Every skill under `.atskills/`, as IDs (`gh/` folded back to `gh:`). */
 export declare function listLocalSkills(cwd: string): string[];
