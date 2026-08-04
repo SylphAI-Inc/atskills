@@ -206,9 +206,22 @@ Reference a specific skill, or one of the collections inside it:
 
 A refusal is not a loss of access. Any sub-path stays resolvable, and because both transports fetch subtrees (sparse checkout / per-path fetch), narrowing costs no more than the refused call would have.
 
-## 9. The Hub — ships later; nothing depends on it
+## 9. The Hub — never required; nothing depends on it
 
-`gh:` paths and local folders resolve with zero hub involvement, forever — that is what makes this a protocol rather than a service. The hub (`atskills.one`) will add what a file tree cannot do for itself: search over the public corpus, visual management, one-screen authoring for non-developers, and private/team hosting for `<owner>/<name>` IDs. Hub reads will be plain HTTP GETs anyone can mirror; the interface will be specified here when it ships, and GitHub-hosted skills will keep their `gh:` identity even when the hub indexes or serves them — hosting is the only thing that grants a name.
+`gh:` paths and local folders resolve with zero hub involvement, forever — that is what makes this a protocol rather than a service. The hub adds what a file tree cannot do for itself: search over the public corpus, visual management, one-screen authoring for non-developers, and private/team hosting. GitHub-hosted skills keep their `gh:` identity even when the hub indexes or serves them — hosting is the only thing that grants a name.
+
+Hub reads are plain HTTP GETs anyone can mirror, under the protocol's own namespace:
+
+```
+GET /api/atskills/<path>            the raw SKILL.md body (text/markdown) —
+                                    `curl -fsSL` of it IS the skill
+GET /api/atskills?prefix=<path>/    a menu: one {path, name, description} per
+                                    public skill under it, capped at 128 (§8.3)
+```
+
+- Auth is optional and only ever **widens**: anonymous callers read public skills; a bearer token additionally reaches the caller's own private ones. An invalid or stale token degrades to anonymous, never 401.
+- `gh:` paths are refused with a pointer to GitHub — the hub never proxies GitHub content, so a mirror of this API needs no GitHub credentials.
+- The reference deployment serves this at `adal.sylph.ai` (the atskills.one domain will serve the same). `/api/atskills` is the only namespace — there is no legacy spelling.
 
 ## 10. Versioning of this Protocol
 
