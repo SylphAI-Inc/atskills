@@ -63,7 +63,8 @@ Every call takes the same options object:
 ```ts
 const opts = {
   workingDir: projectRoot,          // where .atskills/ lives — required
-  // cacheDir:  defaults to ~/.atskills/cache — the shared, agent-neutral cache
+  // cacheDir:  defaults to ~/.cache/atskills (DEFAULT_CACHE_DIR, XDG-aware) —
+  //            the shared, agent-neutral cache; never inside .atskills/
   // registryBaseUrl: your hub, if you use one; gh: paths need none
   // githubBaseUrl: seam for GitHub Enterprise; tests point it at file:// repos
   log: myLogger,                    // optional {info, warn} sink; silent if omitted

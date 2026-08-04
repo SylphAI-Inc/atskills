@@ -143,7 +143,10 @@ function App({ root, onExit, keyHandler, renderer }: { root: string; onExit: () 
         const id = lib.normalizeId(s.label);
         const local = path.join(root, lib.diskPath(id));
         if (fs.existsSync(local)) return { ...s, where: path.join('.atskills', lib.diskPath(id)) };
-        const cached = path.join(os.homedir(), '.atskills', 'cache', lib.diskPath(id));
+        const cached = path.join(
+          process.env.ATSKILLS_CACHE || lib.DEFAULT_CACHE_DIR,
+          lib.diskPath(id),
+        );
         if (fs.existsSync(cached)) return { ...s, where: 'cached · ' + cached.replace(os.homedir(), '~') };
         return { ...s, where: 'not fetched yet' };
       } catch {

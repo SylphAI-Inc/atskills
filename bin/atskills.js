@@ -175,7 +175,7 @@ const HELP = `atskills — reference CLI for the @skills protocol
 
 paths   owner/path = hub · gh:owner/repo/path = github (on disk: gh/…) · lowercase
 rules   local path answers first · using never installs · follow theirs, own yours
-cache   ~/.atskills/cache  (validating, like a browser; always safe to delete)
+cache   ~/.cache/atskills  (validating, like a browser; always safe to delete)
 `;
 
 /**

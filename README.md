@@ -10,6 +10,18 @@ That reference is the entire integration surface. A path addresses a skill; read
 
 **It's just a file tree.** No manifest, no `marketplace.json`, no bundle or plugin concepts. A folder holding a `SKILL.md` is a skill; its path is its address; the tree is the marketplace.
 
+## Why this exists
+
+Skills are becoming the main way to give an agent procedural knowledge — 56,000+ published, plus the private ones teams write to encode their own way of working. But the way you *get* one is still shaped like package management, and that shape costs more than it gives:
+
+- **Using means installing.** Copy files onto disk, after which the skill's description sits in the system prompt permanently, competing for fewer than a hundred slots — whether you use it daily or once. Newer tools (`npx skills add`, `gh skill install`) do fetch a *single* skill instead of a whole bundle, which is real progress — but they still copy, so the resident cost and the lockfile remain.
+- **Names aren't identity.** Those tools address a skill as a *name inside a repo*, and record it that way (`skills-lock.json` keys on the bare name `remotion-create`). In the wild, 13,119 of 56,825 catalogued skills share a name with another skill. A name cannot say which one you meant; a path always can.
+- **Granularity is fixed by the packager.** Take one skill and its relative links to siblings dangle; take the bundle and you get all of it. Whoever packaged it already chose for you.
+
+`@skills:` keeps the `SKILL.md` format everyone already writes and changes only the lifecycle: **a path is the address, reading it is using it, and nothing installs.** A directory is a menu, so one skill, a collection, or a whole repo are the same gesture at different depths — granularity becomes the reader's choice. Persistence is opt-in, one `.gitignore`-style line per decision, and what you never auto-trigger costs no prompt at all.
+
+*Install less, use more.*
+
 ## Highlights
 
 **1 — Skills managed like a filesystem.** A path addresses *any granularity*: one skill, a collection by its parent directory, or a whole repo — and `@skills:` references, saves, and auto-trigger lines all respect the same GitHub path relations:
@@ -42,7 +54,7 @@ Install = add a line; uninstall = remove it. A directory line covers present *an
 
 ## Try it now — reference implementation
 
-This repo ships a working client: a CLI + library with one dependency (`bin/`, `lib/`, Node ≥ 18), a TypeScript protocol core for agent builders (`src/`), the agent spec ([`SKILLS.md`](./SKILLS.md)), and a runnable demo.
+This repo ships a working client: a TypeScript protocol core plus a CLI, one npm dependency, Node ≥ 18.
 
 ```bash
 cd examples/demo && alias atskills="node ../../bin/atskills.js"
@@ -81,25 +93,16 @@ A skill's **path is its identity**.
 
 A reference names one skill or one collection. A collection holds at most **128 skills**; anything larger is refused, and the refusal names smaller paths that work.
 
-This exists because a path can address a whole repository, and repositories exist with thousands of skills — one real catalog holds 6,296. Resolving it means a 110 MB clone (or one fetch per skill against a quota) and an index of roughly 455k tokens, which exceeds most context windows by itself. Nobody curated that collection; it is a repo root that happens to be addressable.
-
-128 is not our number: it is the manifest ceiling the largest catalog in the ecosystem already enforces on itself, so a bundle usable there is usable here.
+A path can address a whole repository, and repositories exist with thousands of skills — one real catalog holds 6,296, which is a 110 MB clone and a ~455k-token index. Nobody curated that; it is a repo root that happens to be addressable. 128 is not our number: it is the ceiling the largest catalog in the ecosystem already enforces on itself.
 
 ```
 gh:sickn33/catalog holds 436 skills — over the 128 a single reference may load.
 Reference a specific skill, or one of the collections inside it:
   gh:sickn33/catalog/plugins/bundle-api-builder  (12)
   gh:sickn33/catalog/plugins/bundle-design-it    (12)
-  gh:sickn33/catalog/plugins/bundle-super-code   (12)
 ```
 
-Three properties make this cheap rather than annoying:
-
-- **The refusal precedes the download.** git clones `--filter=blob:none --no-checkout` and counts with `ls-tree`; no file content moves. (`--no-checkout` is the load-bearing flag — give git a working tree to populate and it faults every blob in anyway.)
-- **It counts skills, not files.** One skill with a 500-file bundle is one skill.
-- **It is not a loss of access.** Any sub-path still resolves, and transports fetch subtrees, so narrowing costs no more than the refused call would have.
-
-Suggestions descend to the *shallowest* paths that fit. One level of grouping isn't enough — in a real aggregator every top-level child is oversized too, so descending is what surfaces the ~10-skill bundles the author actually curated.
+The refusal **precedes the download** (`--filter=blob:none --no-checkout`, counted with `ls-tree` — no file content moves), it counts *skills* not files, and it costs no access: any sub-path still resolves. Suggestions descend to the shallowest paths that fit, which is what surfaces the ~10-skill bundles the author actually curated.
 
 Full requirements: [`PROTOCOL.md`](./PROTOCOL.md) §8.3.
 

@@ -18,7 +18,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildAutotriggerIndex = exports.SkillCollectionTooLargeError = exports.formatBytes = exports.parseTreeListing = exports.largestUsableCollections = exports.assertCollectionFits = exports.listLocalSkills = exports.skillsRoot = exports.saveSkillToProject = exports.resolveLocal = exports.resolveSkill = exports.writeSource = exports.writeFileAtomic = exports.walkSkills = exports.safeJoin = exports.pool = exports.nearestSource = exports.listFiles = exports.leafSkillDirs = exports.frontmatter = exports.findAtskills = exports.copyDirSync = exports.bundleEntries = void 0;
+exports.buildAutotriggerIndex = exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = exports.formatBytes = exports.parseTreeListing = exports.largestUsableCollections = exports.assertCollectionFits = exports.listLocalSkills = exports.skillsRoot = exports.saveSkillToProject = exports.resolveLocal = exports.resolveSkill = exports.writeSource = exports.writeFileAtomic = exports.walkSkills = exports.safeJoin = exports.pool = exports.nearestSource = exports.listFiles = exports.leafSkillDirs = exports.frontmatter = exports.findAtskills = exports.copyDirSync = exports.bundleEntries = void 0;
 /**
  * atskills — the @skills protocol core, in TypeScript.
  *
@@ -59,6 +59,10 @@ Object.defineProperty(exports, "assertCollectionFits", { enumerable: true, get: 
 Object.defineProperty(exports, "largestUsableCollections", { enumerable: true, get: function () { return resolver_js_1.largestUsableCollections; } });
 Object.defineProperty(exports, "parseTreeListing", { enumerable: true, get: function () { return resolver_js_1.parseTreeListing; } });
 Object.defineProperty(exports, "formatBytes", { enumerable: true, get: function () { return resolver_js_1.formatBytes; } });
+// Exported so hosts locate the cache by calling the protocol rather than
+// rebuilding the path — a hardcoded copy silently looks in the wrong place
+// the moment the default moves (as it just did).
+Object.defineProperty(exports, "DEFAULT_CACHE_DIR", { enumerable: true, get: function () { return resolver_js_1.DEFAULT_CACHE_DIR; } });
 Object.defineProperty(exports, "SkillCollectionTooLargeError", { enumerable: true, get: function () { return resolver_js_1.SkillCollectionTooLargeError; } });
 var residency_js_1 = require("./residency.js");
 Object.defineProperty(exports, "buildAutotriggerIndex", { enumerable: true, get: function () { return residency_js_1.buildAutotriggerIndex; } });
