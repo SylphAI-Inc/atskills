@@ -789,6 +789,55 @@ async function downloadRegistry(skillId, dest, opts) {
  * touches nothing and lists the ways out. No digests, no staging dirs, no
  * stored state beyond the two lines.
  */
+/** Every directory below `dir` carrying its own `.source` stamp — saved
+ *  copies a parent-level save would absorb. Does not descend INTO a stamped
+ *  dir (its content belongs to that save). `.git` is never content. */
+function sourceStampDirsBelow(dir) {
+    const out = [];
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return out;
+    }
+    for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name === '.git')
+            continue;
+        const sub = path.join(dir, entry.name);
+        if (fs.existsSync(path.join(sub, ids_js_1.SOURCE_FILE)))
+            out.push(sub);
+        else
+            out.push(...sourceStampDirsBelow(sub));
+    }
+    return out;
+}
+/** Is there ANY file under `dir` that is not inside one of `stamped`?
+ *  Such a file is the project's own work — a parent save must not eat it. */
+function hasContentOutsideStamps(dir, stamped) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return false;
+    }
+    for (const entry of entries) {
+        const sub = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            if (entry.name === '.git')
+                continue;
+            if (stamped.includes(sub))
+                continue; // vendored — the stamp owns it
+            if (hasContentOutsideStamps(sub, stamped))
+                return true;
+        }
+        else {
+            return true; // a loose file at a namespace level = the project's own
+        }
+    }
+    return false;
+}
 async function saveSkillToProject(id, opts) {
     let skillId;
     try {
@@ -802,25 +851,64 @@ async function saveSkillToProject(id, opts) {
     const rel = `${ids_js_1.SKILLS_DIR}/${(0, ids_js_1.diskPath)(skillId)}`;
     // ANY non-empty existing dir gets the conflict treatment — a folder of
     // notes with no SKILL.md is still the project's own work, not overwritable.
+    let absorbedNote;
     if (fs.existsSync(dest) && fs.readdirSync(dest).length > 0) {
         const prior = (0, fsx_js_1.nearestSource)(dest, root);
         if (!prior) {
-            return {
-                success: false,
-                error: `conflict: ${rel}/ already exists and has no .source — it is the project's own work, ` +
-                    `so nothing was touched. Rename your folder, or save under a different path.`,
-            };
+            // A parent NAMESPACE created by child saves has no .source of its own,
+            // but it is not "the project's own work" — it holds saved copies.
+            // Saving the parent is a legitimate WIDENING: when every saved child is
+            // still unedited (verified against its own .source) and nothing else
+            // lives here, the collection save ABSORBS them — the subtree is
+            // replaced by the collection copy, a superset, stamped once here.
+            const stamped = sourceStampDirsBelow(dest);
+            if (stamped.length > 0) {
+                if (hasContentOutsideStamps(dest, stamped)) {
+                    return {
+                        success: false,
+                        error: `conflict: ${rel}/ holds saved skills AND the project's own files — saving the whole ` +
+                            `directory would replace both. Move your own files out, or save siblings individually.`,
+                    };
+                }
+                const edited = [];
+                for (const dir of stamped) {
+                    const stamp = (0, fsx_js_1.nearestSource)(dir, dir);
+                    const untouched = stamp !== null && (await isUneditedSince(stamp.id, dir, stamp.revision, opts));
+                    if (!untouched)
+                        edited.push(path.relative(root, dir));
+                }
+                if (edited.length > 0) {
+                    return {
+                        success: false,
+                        error: `conflict: ${rel}/ holds edited saved skill${edited.length === 1 ? '' : 's'} ` +
+                            `(${edited.join(', ')}) — saving the whole directory would lose those edits. ` +
+                            `Keep them and save siblings individually, or delete the edited folder${edited.length === 1 ? '' : 's'} first.`,
+                    };
+                }
+                absorbedNote =
+                    `absorbed ${stamped.length} previously saved skill${stamped.length === 1 ? '' : 's'} — ` +
+                        `the collection copy is a superset; provenance now lives at ${rel}/${ids_js_1.SOURCE_FILE}`;
+            }
+            else {
+                return {
+                    success: false,
+                    error: `conflict: ${rel}/ already exists and has no ${ids_js_1.SOURCE_FILE} — it is the project's own work, ` +
+                        `so nothing was touched. Rename your folder, or save under a different path.`,
+                };
+            }
         }
-        const unedited = await isUneditedSince(skillId, dest, prior.revision, opts);
-        if (!unedited) {
-            return {
-                success: false,
-                error: `conflict: ${rel}/ already exists (saved from ${prior.id}, ${prior.taken}) and was edited — ` +
-                    `your copy stays untouched. To address it:\n` +
-                    `  · keep yours — do nothing\n` +
-                    `  · refetch upstream — delete the folder, then save again (git keeps your history)\n` +
-                    `  · merge — ask the agent to diff and merge; rev:${prior.revision ?? 'unknown'} is the base`,
-            };
+        else {
+            const unedited = await isUneditedSince(skillId, dest, prior.revision, opts);
+            if (!unedited) {
+                return {
+                    success: false,
+                    error: `conflict: ${rel}/ already exists (saved from ${prior.id}, ${prior.taken}) and was edited — ` +
+                        `your copy stays untouched. To address it:\n` +
+                        `  · keep yours — do nothing\n` +
+                        `  · refetch upstream — delete the folder, then save again (git keeps your history)\n` +
+                        `  · merge — ask the agent to diff and merge; rev:${prior.revision ?? 'unknown'} is the base`,
+                };
+            }
         }
     }
     const revision = await headRevision(skillId, opts);
@@ -848,7 +936,9 @@ async function saveSkillToProject(id, opts) {
     }
     opts.log?.info(`[skills] saved '${skillId}' → ${rel}/ (rev ${revision})`);
     const local = resolveLocal(skillId, root);
-    return local ?? { success: false, error: `Saved '${skillId}' but nothing readable landed at ${rel}/` };
+    if (!local)
+        return { success: false, error: `Saved '${skillId}' but nothing readable landed at ${rel}/` };
+    return absorbedNote ? { ...local, warning: absorbedNote } : local;
 }
 /**
  * Is the copy untouched since it was saved? Verified against upstream AT the
