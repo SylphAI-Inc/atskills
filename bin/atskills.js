@@ -77,6 +77,8 @@ async function cmdSave(rawId) {
   const dest = A.safeJoin(root, A.diskPath(id));
   const stamp = A.nearestSource(dest, root);
   out(`saved: .atskills/${A.diskPath(id)}/ — yours now, detached`);
+  // e.g. the parent-save absorption note ("… the collection copy is a superset").
+  if (res.warning) out(res.warning);
   if (stamp) out(`.source records ${stamp.id} @ ${String(stamp.revision).slice(0, 7)}`);
   const executables = A.listFiles(dest).filter((f) => {
     try { return (fs.statSync(path.join(dest, f)).mode & 0o111) !== 0; } catch { return false; }

@@ -73,6 +73,37 @@ SRC=".atskills/gh/anthropics/skills/skills/pdf/.source"
 [ -f "$SRC" ] && grep -qE 'rev:[0-9a-f]{40}' "$SRC" \
   && ok ".source records the full upstream sha" || bad "bad .source: $(cat "$SRC" 2>/dev/null)"
 
+echo "── parent save absorbs a saved child (the real SylphAI skills library) ──"
+# Save ONE child first; the parent namespace exists with no .source of its own.
+CHILD="gh:sylphai-inc/skills/skills/glowmotion"
+PARENT="gh:sylphai-inc/skills/skills"
+set +e
+CHILD_OUT="$($CLI save "$CHILD" 2>&1)"; CHILD_RC=$?
+set -e
+[ "$CHILD_RC" -eq 0 ] && ok "child save succeeds" || bad "child save failed: $CHILD_OUT"
+
+# Saving the PARENT must absorb the unedited child: superset, one stamp.
+set +e
+PARENT_OUT="$($CLI save "$PARENT" 2>&1)"; PARENT_RC=$?
+set -e
+[ "$PARENT_RC" -eq 0 ] && ok "parent save succeeds over the saved child" || bad "parent save failed: $PARENT_OUT"
+grep -q 'superset' <<<"$PARENT_OUT" && ok "absorption is announced (superset)" || bad "no superset note: $PARENT_OUT"
+PDIR=".atskills/gh/sylphai-inc/skills/skills"
+[ -f "$PDIR/.source" ] && ok "one stamp at the parent" || bad "no parent .source"
+[ ! -f "$PDIR/glowmotion/.source" ] && ok "child stamp absorbed" || bad "child .source still present"
+[ -f "$PDIR/glowmotion/SKILL.md" ] && [ "$(find "$PDIR" -name SKILL.md | wc -l | tr -d ' ')" -ge 2 ] \
+  && ok "collection landed (child + siblings present)" || bad "collection incomplete"
+
+# An EDITED child must refuse by name and stay untouched.
+rm -rf "$PDIR" && $CLI save "$CHILD" >/dev/null 2>&1
+echo "house rules" >> "$PDIR/glowmotion/SKILL.md"
+set +e
+EDIT_OUT="$($CLI save "$PARENT" 2>&1)"; EDIT_RC=$?
+set -e
+[ "$EDIT_RC" -ne 0 ] && grep -q 'glowmotion' <<<"$EDIT_OUT" \
+  && ok "edited child refuses by name" || bad "edited child not protected: $EDIT_OUT"
+grep -q 'house rules' "$PDIR/glowmotion/SKILL.md" && ok "edited copy untouched" || bad "edit lost"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
