@@ -85,7 +85,16 @@ export function collectTreeItems(root: string): SkillTreeItem[] {
       return;
     }
     const dir = safeJoin(root, rel);
-    const fm = frontmatter(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8'));
+    // The dir can vanish between walkSkills and this read (concurrent
+    // /skills remove, background checkout) — skip it rather than throwing
+    // the whole tree away.
+    let raw: string;
+    try {
+      raw = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8');
+    } catch {
+      return;
+    }
+    const fm = frontmatter(raw);
     const src = nearestSource(dir, root);
     items.push({
       kind: src ? 'saved' : 'yours',
@@ -93,6 +102,8 @@ export function collectTreeItems(root: string): SkillTreeItem[] {
       id: rel,
       display: depth ? rel.slice(parentDir.length + 1) : rel,
       depth,
+      parentDir,
+      sourceId: src ? src.id : null,
       description: fm.description ?? '',
       origin: src ? `from ${src.id} (${src.taken})` : 'yours',
       checked: false,
@@ -120,6 +131,7 @@ export function collectTreeItems(root: string): SkillTreeItem[] {
         id: `${p}/`,
         display: `${name}/`,
         depth,
+        parentDir: prefix,
         children: covered.map((s) => `${p}/${s.rel}`),
         description: `${covered.length} skills — one line covers them all`,
         origin: 'directory',
@@ -233,7 +245,10 @@ function splitCover(root: string, coverDir: string, targetPath: string): void {
  * note describing what was written (shown in the dialog's status row).
  */
 export function toggleTreeItem(root: string, itemId: string): string {
-  const item = collectTreeItems(root).find((i) => i.id === itemId);
+  const items = collectTreeItems(root);
+  // Dir rows are spelled with a trailing slash (their line). A typed
+  // `/skills toggle team-flows` means the directory when no leaf answers.
+  const item = items.find((i) => i.id === itemId) ?? items.find((i) => i.id === `${itemId}/`);
   if (!item) return `no row for '${itemId}' — the tree may have changed`;
   if (item.kind === 'error') return 'fix or remove this line in .autotrigger';
 

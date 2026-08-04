@@ -69,9 +69,11 @@ export interface TreeEntry {
     size: number;
 }
 /**
- * Parse `git ls-tree -r -l` — `<mode> <type> <sha> <size>\t<path>`. Under
- * `--filter=blob:none` the sizes still come through (they live in the tree
- * metadata, not the blob), which is what makes a pre-download weight possible.
+ * Parse `git ls-tree -r` — `<mode> <type> <sha>[ <size>]\t<path>`. Accepts
+ * both the plain and `-l` forms; without `-l` every size is -1 (unknown).
+ * Sizes live in blobs, not tree metadata, so under `--filter=blob:none` a
+ * sized listing is not available without paying per-file fetches — the cap
+ * decision needs only the skill COUNT, which the plain listing gives free.
  */
 export declare function parseTreeListing(out: string): TreeEntry[];
 /** Bytes as a person reads them — the unit a download decision is made in. */
@@ -89,6 +91,12 @@ export declare class SkillCollectionTooLargeError extends Error {
         count: number;
     }>, bytes?: number);
 }
+/**
+ * Enforce the cap against a repo file listing. A SKILL.md at the path itself
+ * is one skill whose bundle may be any size — the cap counts skills, never
+ * files, so a legitimately large single skill is never refused.
+ */
+export declare function assertCollectionFits(entries: TreeEntry[], owner: string, repo: string, sub: string): void;
 /**
  * Save = adapt + detach. The copy lands at the ID's own path under
  * `.atskills/` with one two-line `.source` at the top of what was saved.

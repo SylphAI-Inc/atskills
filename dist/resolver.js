@@ -44,6 +44,7 @@ exports.resolveLocal = resolveLocal;
 exports.largestUsableCollections = largestUsableCollections;
 exports.parseTreeListing = parseTreeListing;
 exports.formatBytes = formatBytes;
+exports.assertCollectionFits = assertCollectionFits;
 exports.saveSkillToProject = saveSkillToProject;
 exports.listLocalSkills = listLocalSkills;
 /**
@@ -58,7 +59,8 @@ exports.listLocalSkills = listLocalSkills;
  * A directory with no SKILL.md is not a failure — it's a menu: one row per
  * skill under it, each row a valid path the agent can read on demand.
  *
- * Spec: PROTOCOL.md §1–§4; agent form: SKILLS.md.
+ * Design: docs/adal/workflows/fea_skills_final_design.md §2, §7.1.
+ * Logic ported from SylphAI-Inc/atskills lib/resolve.js + lib/save.js.
  */
 const child_process_1 = require("child_process");
 const crypto = __importStar(require("crypto"));
@@ -277,7 +279,9 @@ async function readThroughCache(skillId, cacheRoot, opts) {
     const serveCached = (warning) => {
         try {
             const described = describeMaterialized(skillId, dest, 'cache');
-            return warning ? { ...described, warning } : described;
+            return warning
+                ? { ...described, warning, served: 'stale' }
+                : { ...described, served: 'cache' };
         }
         catch (e) {
             // An oversized cached tree is a REAL answer, not a corrupt entry — a
@@ -307,9 +311,14 @@ async function readThroughCache(skillId, cacheRoot, opts) {
         try {
             const fresh = await fetchToDir(skillId, cacheRoot, opts, 'cache');
             writeCacheMeta(cacheRoot, skillId, revision);
-            return fresh;
+            return { ...fresh, served: 'fresh' };
         }
         catch (e) {
+            // A too-large refusal is an ANSWER, not an outage: surfacing the stale
+            // menu with a "could not reach upstream" note would be false, and it
+            // would hide the sub-collection suggestions the error carries.
+            if (e instanceof SkillCollectionTooLargeError)
+                throw e;
             // Upstream moved but the refresh failed mid-flight — the cached copy
             // still beats an error.
             if (hasBody) {
@@ -333,7 +342,7 @@ async function readThroughCache(skillId, cacheRoot, opts) {
     try {
         const fresh = await fetchToDir(skillId, cacheRoot, opts, 'cache');
         writeCacheMeta(cacheRoot, skillId, 'unknown');
-        return fresh;
+        return { ...fresh, served: 'fresh' };
     }
     catch (e) {
         if (hasBody) {
@@ -445,9 +454,13 @@ async function downloadViaGit(owner, repo, sub, dest, ref, baseUrl) {
             treeish = 'HEAD';
         }
         // Phase 2 — count what the reference means, and refuse before paying.
-        // `-l` carries each blob's size in the tree metadata, so the exact
-        // download weight is known here too, still without fetching a byte.
-        const listing = await runGitOut(['ls-tree', '-r', '-l', treeish], tmp);
+        // Plain `ls-tree -r` reads pure tree metadata (mode/type/sha/path) from
+        // the objects already fetched. NEVER add `-l`: sizes live in the BLOBS,
+        // which `--filter=blob:none` did not fetch, so `-l` triggers one lazy
+        // promisor fetch per file — on a catalog repo that is thousands of round
+        // trips, and the listing that was supposed to avoid the download costs
+        // more than the download.
+        const listing = await runGitOut(['ls-tree', '-r', treeish], tmp);
         if (listing === null)
             return false;
         assertCollectionFits(parseTreeListing(listing), owner, repo, sub);
@@ -521,9 +534,11 @@ function largestUsableCollections(skills) {
     return out.sort((a, b) => b.count - a.count || a.rel.localeCompare(b.rel));
 }
 /**
- * Parse `git ls-tree -r -l` — `<mode> <type> <sha> <size>\t<path>`. Under
- * `--filter=blob:none` the sizes still come through (they live in the tree
- * metadata, not the blob), which is what makes a pre-download weight possible.
+ * Parse `git ls-tree -r` — `<mode> <type> <sha>[ <size>]\t<path>`. Accepts
+ * both the plain and `-l` forms; without `-l` every size is -1 (unknown).
+ * Sizes live in blobs, not tree metadata, so under `--filter=blob:none` a
+ * sized listing is not available without paying per-file fetches — the cap
+ * decision needs only the skill COUNT, which the plain listing gives free.
  */
 function parseTreeListing(out) {
     const entries = [];
@@ -591,7 +606,10 @@ function assertCollectionFits(entries, owner, repo, sub) {
     if (skills.length <= ids_js_1.MAX_COLLECTION_SKILLS || skills.includes(''))
         return;
     const base = `${ids_js_1.GH_PREFIX}${owner}/${repo}${sub ? `/${sub.replace(/\/+$/, '')}` : ''}`;
-    const bytes = scoped.reduce((sum, e) => (e.size > 0 ? sum + e.size : sum), 0);
+    // -1 (unknown) when the listing carried no sizes — never claim "0 B".
+    const bytes = scoped.some((e) => e.size > 0)
+        ? scoped.reduce((sum, e) => (e.size > 0 ? sum + e.size : sum), 0)
+        : -1;
     throw new SkillCollectionTooLargeError(base, skills.length, collectionSuggestions(base, skills), bytes);
 }
 /**
@@ -686,15 +704,36 @@ function stagingSiblingOf(dest) {
  * come from stagingSiblingOf(dest).
  */
 function swapIntoPlace(staging, dest) {
-    const retired = `${dest}.old-${path.basename(staging).split('.new-')[1]}`;
+    // Take the suffix after the LAST '.new-': a repo-controlled dir named
+    // 'foo.new-x' must not make two concurrent swaps agree on one retired path.
+    const suffix = path.basename(staging).split('.new-').pop();
+    const retired = `${dest}.old-${suffix}`;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
+    let destMovedAside = false;
     try {
-        if (fs.existsSync(dest))
+        if (fs.existsSync(dest)) {
             fs.renameSync(dest, retired);
+            destMovedAside = true;
+        }
         fs.renameSync(staging, dest);
     }
+    catch (err) {
+        // The second rename failed with dest already moved aside: put the old
+        // tree back before surfacing the error — a failed refresh must never
+        // leave the user with NO copy where they had one.
+        if (destMovedAside && !fs.existsSync(dest)) {
+            try {
+                fs.renameSync(retired, dest);
+            }
+            catch {
+                // Restore failed too; leave `retired` in place for manual recovery.
+            }
+        }
+        throw err;
+    }
     finally {
-        fs.rmSync(retired, { recursive: true, force: true });
+        if (fs.existsSync(dest))
+            fs.rmSync(retired, { recursive: true, force: true });
         fs.rmSync(staging, { recursive: true, force: true });
     }
 }
@@ -757,7 +796,9 @@ async function saveSkillToProject(id, opts) {
     const root = skillsRoot(opts.workingDir);
     const dest = (0, fsx_js_1.safeJoin)(root, (0, ids_js_1.diskPath)(skillId));
     const rel = `${ids_js_1.SKILLS_DIR}/${(0, ids_js_1.diskPath)(skillId)}`;
-    if (fs.existsSync(dest) && (0, fsx_js_1.walkSkills)(dest).length > 0) {
+    // ANY non-empty existing dir gets the conflict treatment — a folder of
+    // notes with no SKILL.md is still the project's own work, not overwritable.
+    if (fs.existsSync(dest) && fs.readdirSync(dest).length > 0) {
         const prior = (0, fsx_js_1.nearestSource)(dest, root);
         if (!prior) {
             return {

@@ -17,8 +17,8 @@
  */
 export * from './types.js';
 export * from './ids.js';
-export { bundleEntries, copyDirSync, frontmatter, leafSkillDirs, listFiles, nearestSource, pool, safeJoin, walkSkills, writeFileAtomic, writeSource, type Frontmatter, } from './fsx.js';
+export { bundleEntries, copyDirSync, findAtskills, frontmatter, leafSkillDirs, listFiles, nearestSource, pool, safeJoin, walkSkills, writeFileAtomic, writeSource, type Frontmatter, } from './fsx.js';
 export * from './autotrigger.js';
 export * from './tree.js';
-export { resolveSkill, resolveLocal, saveSkillToProject, skillsRoot, listLocalSkills, largestUsableCollections, parseTreeListing, formatBytes, SkillCollectionTooLargeError, type SkillResolverOpts, type TreeEntry, } from './resolver.js';
+export { resolveSkill, resolveLocal, saveSkillToProject, skillsRoot, listLocalSkills, assertCollectionFits, largestUsableCollections, parseTreeListing, formatBytes, SkillCollectionTooLargeError, type SkillResolverOpts, type TreeEntry, } from './resolver.js';
 export { buildAutotriggerIndex } from './residency.js';

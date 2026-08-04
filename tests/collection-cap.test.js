@@ -8,10 +8,20 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { leafSkillDirs, largestUsableCollections, assertCollectionFits } = require('../lib/fsx');
-const { MAX_COLLECTION_SKILLS } = require('../lib/ids');
+const {
+  leafSkillDirs,
+  largestUsableCollections,
+  assertCollectionFits,
+  ghParts,
+  MAX_COLLECTION_SKILLS,
+} = require('../dist/index.js');
 
 const files = (n, prefix) => Array.from({ length: n }, (_, i) => `${prefix}/s${i}/SKILL.md`);
+// The dist check takes the raw repo listing (leafSkillDirs applies inside).
+const fits = (id, paths) => {
+  const { owner, repo, sub } = ghParts(id);
+  return assertCollectionFits(paths.map((p) => ({ path: p, size: 1 })), owner, repo, sub);
+};
 
 test('leafSkillDirs: a SKILL.md inside a bundle is not a second skill', () => {
   const out = leafSkillDirs([
@@ -27,20 +37,20 @@ test('leafSkillDirs: SKILL.md at the path itself is the root skill', () => {
   assert.deepEqual(leafSkillDirs(['SKILL.md', 'refs/x.md']), ['']);
 });
 
-test('leafSkillDirs: dot-dirs are metadata, never skills', () => {
-  assert.deepEqual(leafSkillDirs(['.git/objects/SKILL.md', 'real/SKILL.md']), ['real']);
+test('leafSkillDirs: dot-dirs ARE skills homes (.claude/…); only .git is never content', () => {
+  assert.deepEqual(
+    leafSkillDirs(['.git/objects/SKILL.md', '.claude/skills/d/SKILL.md', 'real/SKILL.md']),
+    ['.claude/skills/d', 'real'],
+  );
 });
 
 test('cap allows exactly 128 — the boundary is inclusive', () => {
-  const dirs = leafSkillDirs(files(MAX_COLLECTION_SKILLS, 'skills'));
-  assert.equal(dirs.length, 128);
-  assert.doesNotThrow(() => assertCollectionFits('gh:o/r', dirs));
+  assert.doesNotThrow(() => fits('gh:o/r', files(MAX_COLLECTION_SKILLS, 'skills')));
 });
 
 test('cap refuses 129', () => {
-  const dirs = leafSkillDirs(files(MAX_COLLECTION_SKILLS + 1, 'skills'));
-  assert.throws(() => assertCollectionFits('gh:o/r', dirs), (err) => {
-    assert.equal(err.code, 'TOO_LARGE');
+  assert.throws(() => fits('gh:o/r', files(MAX_COLLECTION_SKILLS + 1, 'skills')), (err) => {
+    assert.equal(err.name, 'SkillCollectionTooLargeError');
     assert.equal(err.count, 129);
     assert.match(err.message, /129 skills/);
     assert.match(err.message, /128/);
@@ -50,7 +60,7 @@ test('cap refuses 129', () => {
 
 test('cap counts skills, not files — one skill with a huge bundle is fine', () => {
   const paths = ['solo/SKILL.md', ...Array.from({ length: 500 }, (_, i) => `solo/refs/r${i}.md`)];
-  assert.doesNotThrow(() => assertCollectionFits('gh:o/r', leafSkillDirs(paths)));
+  assert.doesNotThrow(() => fits('gh:o/r', paths));
 });
 
 // The shape that motivated the cap: every top-level child is ALSO oversized,
@@ -61,7 +71,7 @@ test('suggestions descend past oversized parents to reach bundles that fit', () 
     ...files(12, 'plugins/bundle-design-it'),
     ...files(12, 'plugins/bundle-super-code'),
   ];
-  assert.throws(() => assertCollectionFits('gh:sickn33/catalog', leafSkillDirs(paths)), (err) => {
+  assert.throws(() => fits('gh:sickn33/catalog', paths), (err) => {
     const ids = err.suggestions.map((s) => s.id);
     assert.ok(ids.includes('gh:sickn33/catalog/plugins/bundle-design-it'), ids.join(','));
     assert.ok(ids.includes('gh:sickn33/catalog/plugins/bundle-super-code'), ids.join(','));
@@ -80,7 +90,7 @@ test('a repeated collection is offered once, at its shortest path', () => {
   for (const copy of ['skills', 'plugins/claude-copy', 'plugins/codex-copy']) {
     paths.push(...files(200, `${copy}/dump`), ...files(10, `${copy}/design-it`));
   }
-  assert.throws(() => assertCollectionFits('gh:o/r', leafSkillDirs(paths)), (err) => {
+  assert.throws(() => fits('gh:o/r', paths), (err) => {
     const designIt = err.suggestions.filter((s) => s.id.endsWith('/design-it'));
     assert.equal(designIt.length, 1);
     assert.equal(designIt[0].id, 'gh:o/r/skills/design-it'); // the shortest path
@@ -107,7 +117,7 @@ test('largestUsableCollections: terminates on a flat directory it cannot split',
 // With nothing larger to point at, individual skills are still better than
 // an empty list — the refusal must always name a next step.
 test('a flat oversized directory still suggests individual skills', () => {
-  assert.throws(() => assertCollectionFits('gh:o/r', leafSkillDirs(files(200, '.').map((f) => f.slice(2)))), (err) => {
+  assert.throws(() => fits('gh:o/r', files(200, '.').map((f) => f.slice(2))), (err) => {
     assert.ok(err.suggestions.length > 0);
     assert.ok(err.suggestions.every((s) => s.count === 1));
     return true;

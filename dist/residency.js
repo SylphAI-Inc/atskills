@@ -3,6 +3,39 @@
  * @license
  * Copyright 2025 SylphAI Inc.
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildAutotriggerIndex = buildAutotriggerIndex;
 /**
@@ -26,6 +59,8 @@ exports.buildAutotriggerIndex = buildAutotriggerIndex;
  * Per-line failures are never fatal — a line that loads nothing is reported
  * through the injected logger and the session goes on.
  */
+const path = __importStar(require("path"));
+const ids_js_1 = require("./ids.js");
 const fsx_js_1 = require("./fsx.js");
 const autotrigger_js_1 = require("./autotrigger.js");
 const resolver_js_1 = require("./resolver.js");
@@ -51,7 +86,13 @@ async function buildAutotriggerIndex(opts) {
             return;
         }
         seen.add(file);
-        rows.push(`- ${name}: ${description}${note} (${file})`);
+        // Project files read as project-relative paths (.atskills/…): stable
+        // across machines, no username in the prompt, and directly readable from
+        // the project cwd. Cache paths stay absolute — they live outside it.
+        const shown = file.startsWith(root + path.sep)
+            ? path.join(ids_js_1.SKILLS_DIR, path.relative(root, file))
+            : file;
+        rows.push(`- ${name}: ${description}${note} (${shown})`);
     };
     const resident = (0, autotrigger_js_1.expandLocalTriggers)(root);
     for (const r of resident) {

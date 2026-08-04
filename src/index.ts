@@ -22,6 +22,7 @@ export * from './ids.js';
 export {
   bundleEntries,
   copyDirSync,
+  findAtskills,
   frontmatter,
   leafSkillDirs,
   listFiles,
@@ -41,6 +42,7 @@ export {
   saveSkillToProject,
   skillsRoot,
   listLocalSkills,
+  assertCollectionFits,
   largestUsableCollections,
   parseTreeListing,
   formatBytes,

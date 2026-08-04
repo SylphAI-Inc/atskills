@@ -21,7 +21,7 @@ import { createRoot, AppContext, useKeyboard } from '@opentui/react';
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const lib = require('../lib/index.js');
+const lib = require('../dist/index.js');
 
 const GREEN = '#22c55e';
 const YELLOW = '#eab308';
@@ -30,7 +30,7 @@ const BLUE = '#58a6ff';
 const RED = '#ef4444';
 
 type Block = { kind: 'cmd' | 'text' | 'ref' | 'note' | 'error' | 'inject'; text: string };
-type Item = ReturnType<typeof lib.ui.collectItems>[number];
+type Item = ReturnType<typeof lib.collectTreeItems>[number];
 
 const HELP = [
   '@skills:<path>            use a skill — body prints here (a directory prints a menu)',
@@ -84,7 +84,7 @@ function suggestionsFor(
     .map((c) => ({ label: c, next: `${head}@skills:${c}` }));
 }
 
-function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: string; onExit: () => void; keyHandler: any; renderer: any }) {
+function App({ root, onExit, keyHandler, renderer }: { root: string; onExit: () => void; keyHandler: any; renderer: any }) {
   const [view, setView] = useState<'main' | 'skills' | 'prompt'>('main');
   const [log, setLog] = useState<Block[]>([
     { kind: 'note', text: 'atskills — the @skills console. /help for commands.' },
@@ -118,11 +118,15 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
   const push = (...blocks: Block[]) => setLog((l) => [...l, ...blocks]);
   const refresh = () => setTick((t) => t + 1);
 
+  const resolverOpts = useMemo(
+    () => ({ workingDir: path.dirname(root), cacheDir: process.env.ATSKILLS_CACHE || undefined }),
+    [root],
+  );
   const items: Item[] = useMemo(() => {
     try {
-      return lib.ui.collectItems(root);
+      return lib.collectTreeItems(root);
     } catch (err: any) {
-      return [{ kind: 'error', id: 'error', line: null, label: 'tree error', display: 'tree error', depth: 0, description: String(err.message), origin: 'invalid' }];
+      return [{ kind: 'error', id: 'error', line: 'error', display: 'tree error', depth: 0, description: String(err.message), origin: 'invalid', checked: false }];
     }
   }, [root, tick]);
   const suggestions = useMemo(() => {
@@ -139,8 +143,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         const id = lib.normalizeId(s.label);
         const local = path.join(root, lib.diskPath(id));
         if (fs.existsSync(local)) return { ...s, where: path.join('.atskills', lib.diskPath(id)) };
-        const loc = cache.location?.(lib.sources.skillUrl(id));
-        if (loc) return { ...s, where: 'cached · ' + loc.replace(os.homedir(), '~').replace(/\/body$/, '') };
+        const cached = path.join(os.homedir(), '.atskills', 'cache', lib.diskPath(id));
+        if (fs.existsSync(cached)) return { ...s, where: 'cached · ' + cached.replace(os.homedir(), '~') };
         return { ...s, where: 'not fetched yet' };
       } catch {
         return s;
@@ -190,7 +194,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
     const id = lib.normalizeId(raw.trim().replace(/^@/, ''));
     const local = fs.existsSync(path.join(root, lib.diskPath(id)));
     const line = (local ? lib.diskPath(id) : '@' + id) + (wholeDir ? '/' : '');
-    return lib.autotrigger.addLine(root, line)
+    return lib.addTriggerLine(root, line)
       ? `installed = added one line: ${line}`
       : `already installed: ${line}`;
   };
@@ -203,47 +207,39 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
       const { id, save: doSave, install: doInstall } = lib.parseReference(ref);
       // Using is reading — a suffixed reference still injects its content;
       // :save / :install are actions IN ADDITION to the read, shown after it.
-      const res = await lib.resolve(cache, id, root);
+      const res = await lib.resolveSkill(id, false, resolverOpts);
+      if (!res.success) {
+        push({ kind: 'error', text: res.error || `nothing at ${id}` });
+        return;
+      }
       if (res.kind === 'skill') {
+        const isLocal = res.source === 'local';
+        const skillDir = path.dirname(res.path);
+        const stamp = isLocal ? lib.nearestSource(skillDir, root) : null;
         // The badge shows a LOCAL path — cloud copies live in the cache tree.
         const ref2 =
-          res.where === 'local'
-            ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md') +
-              (res.source ? `  (saved from ${res.source.id}, ${res.source.taken})` : '')
-            : `${String(res.cachePath || res.url).replace(os.homedir(), '~')} (cloud·${res.status})  ·  review: ${lib.sources.webUrl(id)}`;
+          isLocal
+            ? path.join('.atskills', path.relative(root, skillDir), 'SKILL.md') +
+              (stamp ? `  (saved from ${stamp.id}, ${stamp.taken})` : '')
+            : `${String(res.path).replace(os.homedir(), '~')} (cloud·${res.served || 'fresh'})  ·  review: ${res.reviewUrl || lib.webUrl(id)}`;
         // What prints below is EXACTLY what an agent injects as the user
         // query for this @ reference: content with numbered lines, plus a
         // listing of the skill's bundled files (discoverable, not preloaded).
-        const numbered = res.text
+        const numbered = res.content
           .trimEnd()
           .split('\n')
           .map((l: string, i: number) => `${i + 1}|${l}`)
           .join('\n');
-        let bundled: string[] = [];
-        try {
-          if (res.where === 'local') {
-            const walk = (d: string, rel: string): string[] =>
-              fs.readdirSync(d, { withFileTypes: true }).flatMap((e: any) => {
-                if (e.name.startsWith('.')) return [];
-                const r = rel ? `${rel}/${e.name}` : e.name;
-                return e.isDirectory() ? walk(path.join(d, e.name), r) : [r];
-              });
-            bundled = walk(res.dir, '').filter((f: string) => f !== 'SKILL.md');
-          } else if (id.startsWith('gh:')) {
-            bundled = (await lib.sources.listGhFiles(cache, id)).filter((f: string) => f !== 'SKILL.md');
-          }
-        } catch {
-          bundled = [];
-        }
+        const bundled: string[] = (res.files || []).filter((f: string) => f !== 'SKILL.md' && !f.startsWith('.'));
         // The agent works on LOCAL paths — the injection carries them, so the
         // file (and its bundled siblings) can be re-read on demand.
         const localFile =
-          res.where === 'local'
-            ? path.join('.atskills', path.relative(root, res.dir), 'SKILL.md')
-            : String(res.cachePath).replace(os.homedir(), '~');
+          isLocal
+            ? path.join('.atskills', path.relative(root, skillDir), 'SKILL.md')
+            : String(res.path).replace(os.homedir(), '~');
         const localDir = path.dirname(localFile);
         // Display first — the badges the user sees on the message…
-        push({ kind: 'ref', text: `⎿ read ${ref2} (${res.text.trimEnd().split('\n').length} lines)` });
+        push({ kind: 'ref', text: `⎿ read ${ref2} (${res.content.trimEnd().split('\n').length} lines)` });
         if (bundled.length) push({ kind: 'ref', text: `⎿ listed directory ${localDir}/ (${bundled.length + 1} items)` });
         // …then what is actually sent to the model as the user query.
         push({ kind: 'inject', text: `Content from @skills:${id} (${localFile}):\n${numbered}` });
@@ -257,12 +253,13 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
         // A directory reference injects a menu — one line per skill, every
         // line itself a valid path. This block is the injection, verbatim.
         setKnownIds((k) => [...new Set([...k, id, ...res.entries.map((e: any) => e.id)])]);
+        const menuLocal = res.source === 'local';
         const dirShown =
-          res.where === 'local'
+          menuLocal
             ? path.join('.atskills', lib.diskPath(id))
-            : String(res.cacheDir || id).replace(os.homedir(), '~');
+            : String(res.dir || id).replace(os.homedir(), '~');
         push(
-          { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${res.where === 'local' ? '' : ` (cloud)  ·  review: ${lib.sources.webUrl(id)}`}` },
+          { kind: 'ref', text: `⎿ read skills directory ${dirShown}/ (${res.entries.length} skills)${menuLocal ? '' : ` (cloud)  ·  review: ${res.reviewUrl || lib.webUrl(id)}`}` },
           {
             kind: 'inject' as const,
             // The combination of the lists: one index line per child skill,
@@ -272,7 +269,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
               res.entries
                 .map(
                   (e: any) =>
-                    `- ${e.name}: ${e.description} (${String(e.file || e.id).replace(os.homedir(), '~')}${
+                    `- ${e.name}: ${e.description} (${String(e.path || e.id).replace(os.homedir(), '~')}${
                       e.bundle && e.bundle.length ? ' · dir: ' + e.bundle.join(', ') : ''
                     })`
                 )
@@ -282,12 +279,18 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
       }
       if (doSave) {
         try {
-          const r = await lib.save(cache, id, root);
-          push({ kind: 'note', text: `${r.action}: .atskills/${lib.diskPath(id)}/ — yours now, detached (rev ${String(r.revision).slice(0, 7)})` });
-          if (r.executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${r.executables.join(', ')}` });
-          if (lib.autotrigger.hasLine(root, '@' + id)) {
-            lib.autotrigger.removeLine(root, '@' + id);
-            lib.autotrigger.addLine(root, lib.diskPath(id));
+          const r = await lib.saveSkillToProject(id, resolverOpts);
+          if (!r.success) throw new Error(r.error || `could not save ${id}`);
+          const dest = path.join(root, lib.diskPath(id));
+          const stamp2 = lib.nearestSource(dest, root);
+          push({ kind: 'note', text: `saved: .atskills/${lib.diskPath(id)}/ — yours now, detached${stamp2 ? ` (rev ${String(stamp2.revision).slice(0, 7)})` : ''}` });
+          const executables = lib.listFiles(dest).filter((f: string) => {
+            try { return (fs.statSync(path.join(dest, f)).mode & 0o111) !== 0; } catch { return false; }
+          });
+          if (executables.length) push({ kind: 'note', text: `bundled executables (review before running): ${executables.join(', ')}` });
+          if (lib.hasTriggerLine(root, '@' + id)) {
+            lib.removeTriggerLine(root, '@' + id);
+            lib.addTriggerLine(root, lib.diskPath(id));
             push({ kind: 'note', text: `flipped the @ line to plain — the file reads true` });
           }
         } catch (err: any) {
@@ -296,18 +299,23 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
       }
       if (doInstall) {
         const line = installLine(id);
-        if (lib.autotrigger.addLine(root, line)) push({ kind: 'note', text: `installed = added one line to .autotrigger: ${line}` });
+        if (lib.addTriggerLine(root, line)) push({ kind: 'note', text: `installed = added one line to .autotrigger: ${line}` });
         else push({ kind: 'note', text: `already installed: ${line}` });
       }
       if (doSave || doInstall) refresh();
     },
-    [cache, root]
+    [root, resolverOpts]
   );
 
   const showPrompt = useCallback(async () => {
-    setPrompt(await lib.buildPrompt(cache, root));
+    const notes: string[] = [];
+    const text = await lib.buildAutotriggerIndex({
+      workingDir: path.dirname(root),
+      log: { info: () => {}, warn: (m: string) => notes.push(m) },
+    });
+    setPrompt({ text, tokens: Math.ceil(text.length / 4), notes });
     setView('prompt');
-  }, [cache, root]);
+  }, [root]);
 
   const submit = useCallback(
     async (raw: string) => {
@@ -353,7 +361,7 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           if (key.name === 'up' || key.name === 'k') move(-1);
           else if (key.name === 'down' || key.name === 'j') move(1);
           else if (key.name === 'space' && current) {
-            setNote(lib.ui.toggle(root, current));
+            setNote(lib.toggleTreeItem(root, current.id));
             refresh();
           } else if (key.name === 'return') await showPrompt();
           return;
@@ -391,14 +399,10 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           <box style={{ flexDirection: 'column' }}>
             <text>{prompt.text.trim() ? prompt.text.trimEnd() : '(nothing auto-triggers — the prompt is empty)'}</text>
             <text> </text>
-            <text fg={BLUE}>read from:</text>
-            {prompt.sections.map((s: any, i: number) =>
-              s.error ? (
-                <text key={i} fg={YELLOW}>✗ {s.line} {s.error}</text>
-              ) : (
-                <text key={i} fg={GRAY} selectable>⎿ read {s.ref}{s.web ? '  ·  review: ' + s.web : ''}</text>
-              )
-            )}
+            {prompt.notes.length > 0 && <text fg={BLUE}>problems:</text>}
+            {prompt.notes.map((n: string, i: number) => (
+              <text key={i} fg={YELLOW}>✗ {n}</text>
+            ))}
           </box>
         </scrollbox>
         <box style={{ flexShrink: 0 }}>
@@ -424,9 +428,8 @@ function App({ cache, root, onExit, keyHandler, renderer }: { cache: any; root: 
           <box style={{ flexDirection: 'column' }}>
             {items.length === 0 && <text fg={GRAY}>  nothing yet — save or install something from the console first</text>}
             {items.map((item: Item, i: number) => {
-              let checked: any = false;
-              try { checked = lib.ui.isChecked(root, item); } catch {}
-              const box_ = lib.ui.boxFor(checked);
+              const checked: any = item.checked;
+              const box_ = lib.checkboxFor(checked);
               const cur = i === cursor;
               // filesystem-tree glyphs for children of a directory node
               const isLast = !(items[i + 1] && (items[i + 1] as any).parentDir === item.parentDir);
@@ -585,7 +588,6 @@ async function main() {
     console.error('no .atskills/ found here or above — create one: mkdir .atskills');
     process.exit(1);
   }
-  const cache = new lib.Cache();
   const renderer = await createCliRenderer({ fps: 30 });
   const reactRoot = createRoot(renderer);
   // Bracketed paste is a terminal mode the APP must enable (adal does the
@@ -603,7 +605,7 @@ async function main() {
   };
   reactRoot.render(
     <AppContext.Provider value={{ renderer, keyHandler: (renderer as any).keyInput }}>
-      <App cache={cache} root={root} onExit={onExit} keyHandler={(renderer as any).keyInput} renderer={renderer} />
+      <App root={root} onExit={onExit} keyHandler={(renderer as any).keyInput} renderer={renderer} />
     </AppContext.Provider>
   );
 }

@@ -153,12 +153,14 @@ test('the checkbox tree toggles by writing .autotrigger lines', opts, async () =
 test('residency builds the exact prompt block a host splices in', opts, async () => {
   const core = await import(DIST);
   const workingDir = project();
-  const dir = makeLocalSkill(workingDir, 'sec-check', 'Reviews security');
+  makeLocalSkill(workingDir, 'sec-check', 'Reviews security');
   fs.writeFileSync(path.join(workingDir, '.atskills', '.autotrigger'), 'sec-check\n');
 
   const block = await core.buildAutotriggerIndex(resolverOpts(workingDir));
+  // Project rows carry PROJECT-RELATIVE paths: stable across machines, no
+  // username in the prompt, readable from the project cwd.
   assert.equal(
     block,
-    `Auto-triggered Skills (.atskills/.autotrigger):\n- sec-check: Reviews security (${path.join(dir, 'SKILL.md')})`,
+    'Auto-triggered Skills (.atskills/.autotrigger):\n- sec-check: Reviews security (.atskills/sec-check/SKILL.md)',
   );
 });

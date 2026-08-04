@@ -77,6 +77,15 @@ function triggerFilePath(skillsRoot) {
  * Parse the file. Comments and blanks drop; exact duplicate lines collapse
  * (they load once); order is preserved.
  */
+/**
+ * gitignore semantics: `#` introduces a comment only at the start of a line
+ * (after leading whitespace); a `#` inside a pattern is a literal character —
+ * a skill named `c#-patterns` must keep its full name.
+ */
+function effectiveLine(raw) {
+    const line = raw.trim();
+    return line.startsWith('#') ? '' : line;
+}
 function parseTriggers(skillsRoot) {
     const file = triggerFilePath(skillsRoot);
     if (!fs.existsSync(file))
@@ -84,7 +93,7 @@ function parseTriggers(skillsRoot) {
     const seen = new Set();
     const entries = [];
     for (const rawLine of fs.readFileSync(file, 'utf-8').split('\n')) {
-        const line = rawLine.replace(/#.*$/, '').trim();
+        const line = effectiveLine(rawLine);
         if (!line || seen.has(line))
             continue;
         seen.add(line);
@@ -190,7 +199,7 @@ function addTriggerLine(skillsRoot, line) {
     const file = triggerFilePath(skillsRoot);
     const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const target = line.trim();
-    if (current.split('\n').some((l) => l.replace(/#.*$/, '').trim() === target))
+    if (current.split('\n').some((l) => effectiveLine(l) === target))
         return false;
     const body = current.length > 0 && !current.endsWith('\n') ? `${current}\n` : current;
     fs.mkdirSync(skillsRoot, { recursive: true });
@@ -208,7 +217,7 @@ function removeTriggerLine(skillsRoot, line) {
         .readFileSync(file, 'utf-8')
         .split('\n')
         .filter((raw) => {
-        if (raw.replace(/#.*$/, '').trim() === target) {
+        if (effectiveLine(raw) === target) {
             removed = true;
             return false;
         }
