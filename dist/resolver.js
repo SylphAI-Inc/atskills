@@ -740,7 +740,11 @@ function swapIntoPlace(staging, dest) {
 /** Is there a SKILL.md at exactly this path? The one question that decides. */
 /** Resolve a hub/registry ID and materialize it at `dest`. */
 async function downloadRegistry(skillId, dest, opts) {
-    const base = opts.registryBaseUrl || 'https://adal.sylph.ai/api/atskills';
+    const base = opts.registryBaseUrl;
+    if (!base) {
+        throw new Error(`'${skillId}' is a hub path, and no registry is configured. ` +
+            `Use a gh:owner/repo/path reference (needs no hub), or set registryBaseUrl.`);
+    }
     let data;
     try {
         const response = await fetch(`${base}/resolve/${skillId}`);

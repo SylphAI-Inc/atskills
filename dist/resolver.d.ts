@@ -15,7 +15,12 @@ export interface SkillResolverOpts {
      * Entries are always safe to delete; the path re-resolves.
      */
     cacheDir?: string;
-    /** Hub/registry base URL for non-`gh:` IDs. */
+    /**
+     * Hub/registry base URL for non-`gh:` IDs — OPT-IN. The protocol needs no
+     * hub: `gh:` paths and local folders resolve without one, forever. A host
+     * that wants hub IDs configures its registry here; without it, a hub-style
+     * reference fails fast with a message instead of a network call.
+     */
     registryBaseUrl?: string;
     /**
      * Base URL that `gh:owner/repo` remotes resolve under. Defaults to
