@@ -788,7 +788,7 @@ function swapIntoPlace(staging: string, dest: string): void {
 /** Is there a SKILL.md at exactly this path? The one question that decides. */
 /** Resolve a hub/registry ID and materialize it at `dest`. */
 async function downloadRegistry(skillId: string, dest: string, opts: SkillResolverOpts): Promise<void> {
-  const base = opts.registryBaseUrl || 'https://adal.sylph.ai/api/workflows';
+  const base = opts.registryBaseUrl || 'https://adal.sylph.ai/api/atskills';
   let data: {
     entry?: { content?: string; github_skill_path?: string; github_repo?: string; github_path?: string };
   };
