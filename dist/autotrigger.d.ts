@@ -26,10 +26,6 @@ export interface ResidentSkill {
     error?: string;
 }
 export declare function triggerFilePath(skillsRoot: string): string;
-/**
- * Parse the file. Comments and blanks drop; exact duplicate lines collapse
- * (they load once); order is preserved.
- */
 export declare function parseTriggers(skillsRoot: string): TriggerEntry[];
 /**
  * What actually loads at session start, for the LOCAL half of the file:

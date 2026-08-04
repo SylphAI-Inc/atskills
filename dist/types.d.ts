@@ -58,6 +58,9 @@ export interface LoadResponse {
     /** Directory case: one row per skill under it. */
     entries?: SkillMenuEntry[];
     source?: SkillSource;
+    /** Cloud resolutions: how the cache answered — fresh fetch, validated hit,
+     *  or a stale copy served because upstream was unreachable. */
+    served?: 'fresh' | 'cache' | 'stale';
     /** Provenance of cloud resolutions. */
     origin?: OriginInfo;
     /** Non-fatal problem the surface should show (e.g. served stale offline). */
@@ -81,6 +84,10 @@ export interface SkillTreeItem {
     id: string;
     display: string;
     depth: number;
+    /** Parent prefix inside `.atskills/` ('' at the root) — tree-branch drawing. */
+    parentDir?: string;
+    /** `.source` line 1 for a saved copy — the id it was taken from. */
+    sourceId?: string | null;
     description: string;
     /** Where it came from: yours · from <id> (<date>) · github · directory. */
     origin: string;

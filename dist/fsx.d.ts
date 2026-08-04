@@ -7,6 +7,12 @@
  * defense against `..` smuggled through a reference or a config line.
  */
 export declare function safeJoin(root: string, rel: string): string;
+/**
+ * The nearest `.atskills/` at or above `start`, or null. Same walk-up rule as
+ * git's repo discovery: a skill command run in a subdirectory finds the
+ * project's skills root.
+ */
+export declare function findAtskills(start: string): string | null;
 export interface Frontmatter {
     name: string | null;
     description: string | null;
@@ -25,8 +31,8 @@ export interface FoundSkill {
 }
 /**
  * Walk for skills under dir. A skill is a folder holding SKILL.md, and the
- * walk stops there (leaf rule). Dotfiles and dot-dirs are metadata — never
- * listed, never descended into.
+ * walk stops there (leaf rule). Dot FILES (.source, .autotrigger) are metadata
+ * and are never skills; dot-DIRS are walked — see SKIP_DIRS.
  */
 export declare function walkSkills(dir: string, rel?: string): FoundSkill[];
 /**

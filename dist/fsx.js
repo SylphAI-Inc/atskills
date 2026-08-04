@@ -38,6 +38,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.safeJoin = safeJoin;
+exports.findAtskills = findAtskills;
 exports.frontmatter = frontmatter;
 exports.walkSkills = walkSkills;
 exports.leafSkillDirs = leafSkillDirs;
@@ -66,6 +67,23 @@ function safeJoin(root, rel) {
         throw new Error(`path escapes the skills directory: ${rel}`);
     }
     return abs;
+}
+/**
+ * The nearest `.atskills/` at or above `start`, or null. Same walk-up rule as
+ * git's repo discovery: a skill command run in a subdirectory finds the
+ * project's skills root.
+ */
+function findAtskills(start) {
+    let dir = path.resolve(start);
+    for (;;) {
+        const p = path.join(dir, '.atskills');
+        if (fs.existsSync(p) && fs.statSync(p).isDirectory())
+            return p;
+        const parent = path.dirname(dir);
+        if (parent === dir)
+            return null;
+        dir = parent;
+    }
 }
 /**
  * Parse SKILL.md frontmatter. Tolerates CRLF, quoted values, and YAML block
@@ -99,9 +117,22 @@ function frontmatter(text) {
     return out;
 }
 /**
+ * The one directory that is never content: git's own object store. It is
+ * already filtered when saving, and holds no SKILL.md by construction.
+ *
+ * Every other directory is walked, INCLUDING dot-dirs — `.claude/skills/`,
+ * `.agents/`, `.gemini/`, `.kiro/` and `.atskills/` are where the ecosystem
+ * publishes, and hold ~12% of all skills. Skipping every dot-dir also made
+ * local resolution disagree with remote listing (the GitHub trees API has no
+ * such filter), so a skill visible on GitHub vanished once it was saved.
+ *
+ * Protocol: atskills PROTOCOL.md §8.2.1 (source of truth — change it there).
+ */
+const SKIP_DIRS = new Set(['.git']);
+/**
  * Walk for skills under dir. A skill is a folder holding SKILL.md, and the
- * walk stops there (leaf rule). Dotfiles and dot-dirs are metadata — never
- * listed, never descended into.
+ * walk stops there (leaf rule). Dot FILES (.source, .autotrigger) are metadata
+ * and are never skills; dot-DIRS are walked — see SKIP_DIRS.
  */
 function walkSkills(dir, rel = '') {
     let stat;
@@ -124,7 +155,7 @@ function walkSkills(dir, rel = '') {
         return [];
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (!entry.isDirectory() || entry.name.startsWith('.'))
+        if (!entry.isDirectory() || SKIP_DIRS.has(entry.name))
             continue;
         found.push(...walkSkills(path.join(dir, entry.name), rel ? `${rel}/${entry.name}` : entry.name));
     }
@@ -151,7 +182,10 @@ function leafSkillDirs(paths) {
         if (!p.endsWith('SKILL.md'))
             continue;
         const dir = p.slice(0, Math.max(0, p.length - 'SKILL.md'.length)).replace(/\/$/, '');
-        if (dir.split('/').some((seg) => seg.startsWith('.')))
+        // Same rule as walkSkills — the pre-download count and the menu it guards
+        // must apply identical filters, or the cap is enforced on a number the
+        // reader never sees.
+        if (dir.split('/').some((seg) => SKIP_DIRS.has(seg)))
             continue;
         dirs.add(dir);
     }

@@ -25,6 +25,8 @@
  * through the injected logger and the session goes on.
  */
 
+import * as path from 'path';
+import { SKILLS_DIR } from './ids.js';
 import { frontmatter, pool } from './fsx.js';
 import { expandLocalTriggers, parseTriggers } from './autotrigger.js';
 import { resolveSkill, skillsRoot, type SkillResolverOpts } from './resolver.js';
@@ -59,7 +61,13 @@ export async function buildAutotriggerIndex(opts: SkillResolverOpts): Promise<st
       return;
     }
     seen.add(file);
-    rows.push(`- ${name}: ${description}${note} (${file})`);
+    // Project files read as project-relative paths (.atskills/…): stable
+    // across machines, no username in the prompt, and directly readable from
+    // the project cwd. Cache paths stay absolute — they live outside it.
+    const shown = file.startsWith(root + path.sep)
+      ? path.join(SKILLS_DIR, path.relative(root, file))
+      : file;
+    rows.push(`- ${name}: ${description}${note} (${shown})`);
   };
 
   const resident = expandLocalTriggers(root);

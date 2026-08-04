@@ -14,8 +14,67 @@
  * Ported from SylphAI-Inc/atskills lib/ids.js.
  */
 
-const ID_SEGMENT = /^[a-z0-9][a-z0-9._-]*$/;
-const GH_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/**
+ * Two spellings of one address.
+ *
+ * CANONICAL — what `normalizeId` returns, and what git and the filesystem use:
+ * the TRUE path, decoded (`gh:owner/repo/skills/API Gateway`).
+ *
+ * REFERENCE — what a person types and what a copy button emits: the same
+ * address with the two characters the reference grammar would misread
+ * percent-encoded. A space, because `@skills:<path> <prompt>` is
+ * whitespace-delimited; and `:`, because it marks the `:save`/`:install`
+ * suffixes (`gh:owner/repo/skills/API%20Gateway`).
+ *
+ * If GitHub can serve the path, the protocol accepts it — the encoding exists
+ * so the grammar never has to reject a real directory name. The allowlist this
+ * replaced (`[A-Za-z0-9._-]`, alphanumeric first char) blocked 6,776 of 56,825
+ * published skills: everything under `.claude/`, `.agents/`, `.gemini/`,
+ * `.kiro/` and `.atskills/` — this protocol's own directory — plus
+ * `_official`, `@scope`, Chinese names and `API Gateway`.
+ *
+ * Protocol: atskills PROTOCOL.md §8.2.1 (source of truth — change it there).
+ */
+function decodeSegment(seg: string): string {
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    return seg; // a stray '%' is a legal filename character, not an escape
+  }
+}
+
+/**
+ * Canonical ID → reference spelling, safe to paste into a prompt. The `gh:`
+ * marker is grammar, not a segment, so it stays literal.
+ */
+export function referenceSpelling(id: string): string {
+  const text = String(id);
+  const prefix = /^gh:/i.test(text) ? GH_PREFIX : '';
+  return (
+    prefix +
+    text
+      .slice(prefix.length)
+      .split('/')
+      .map((seg) => seg.replace(/[\s:]/g, (ch) => (ch === ':' ? '%3A' : encodeURIComponent(ch))))
+      .join('/')
+  );
+}
+
+/**
+ * Only what cannot denote a directory is refused: the separators, the
+ * traversal tokens, and control characters. Written as explicit checks rather
+ * than a regex — a character class of control-code escapes is easy to corrupt
+ * in transit and hard to review.
+ */
+function badSegment(seg: string): boolean {
+  if (seg === '' || seg === '.' || seg === '..') return true;
+  if (seg.includes('/') || seg.includes('\\')) return true;
+  for (let i = 0; i < seg.length; i++) {
+    const code = seg.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
 
 export const GH_PREFIX = 'gh:';
 export const SKILLS_DIR = '.atskills';
@@ -38,7 +97,7 @@ export const AUTOTRIGGER_FILE = '.autotrigger';
 export const SOURCE_FILE = '.source';
 
 /**
- * Accept pasted GitHub URLs:
+ * Accept pasted GitHub URLs, exactly like the old @workflow resolver did:
  * `github.com/owner/repo[/tree/<branch>|/blob/<branch>]/path` → `gh:owner/repo/path`
  * (the tree/blob + branch pair is spliced out; a trailing SKILL.md drops).
  */
@@ -76,23 +135,22 @@ export function normalizeId(raw: string): string {
   if (/^gh:/i.test(id)) {
     // Only the `gh:` marker folds; GitHub paths are case-sensitive.
     id = GH_PREFIX + id.slice(3);
-    const segments = id.slice(3).split('/');
+    // Decode to the canonical form — `%20` back to a space — so what reaches
+    // git is the directory that actually exists. Decode BEFORE validating, or
+    // an encoded separator (`%2F`) would smuggle a path apart.
+    const segments = id.slice(3).split('/').map(decodeSegment);
     if (segments.length < 2) throw new Error(`gh: paths need at least owner/repo: ${raw}`);
     for (const seg of segments) {
-      if (seg === '.' || seg === '..' || !GH_SEGMENT.test(seg)) {
-        throw new Error(`invalid path segment "${seg}" in ${raw}`);
-      }
+      if (badSegment(seg)) throw new Error(`invalid path segment "${seg}" in ${raw}`);
     }
-    return id;
+    return GH_PREFIX + segments.join('/');
   }
 
-  id = id.toLowerCase();
-  for (const seg of id.split('/')) {
-    if (seg === '.' || seg === '..' || !ID_SEGMENT.test(seg)) {
-      throw new Error(`invalid path segment "${seg}" in ${raw}`);
-    }
+  const segments = id.toLowerCase().split('/').map(decodeSegment);
+  for (const seg of segments) {
+    if (badSegment(seg)) throw new Error(`invalid path segment "${seg}" in ${raw}`);
   }
-  return id;
+  return segments.join('/');
 }
 
 export function isGh(id: string): boolean {
@@ -127,19 +185,22 @@ export interface SkillReference {
   wholeDir: boolean;
   save: boolean;
   install: boolean;
+  /** Legacy `@workflow:…:index` — frontmatter only. Undocumented, still honored. */
+  index: boolean;
 }
 
 /**
  * `@skills:<path>[:save][:install]` — the path is greedy until the trailing
- * suffixes, which combine in any order. Throws (via normalizeId) on an
- * unusable path.
+ * suffixes, which combine in any order. `@workflow:` is a silent alias for the
+ * same grammar. Throws (via normalizeId) on an unusable path.
  */
 export function parseReference(raw: string): SkillReference {
-  let rest = String(raw).replace(/^@?skills:/, '');
-  const suffixes = { save: false, install: false };
+  let rest = String(raw).replace(/^@?(skills|workflow):/, '');
+  const suffixes = { save: false, install: false, index: false };
   for (;;) {
     if (rest.endsWith(':save')) { suffixes.save = true; rest = rest.slice(0, -5); continue; }
     if (rest.endsWith(':install')) { suffixes.install = true; rest = rest.slice(0, -8); continue; }
+    if (rest.endsWith(':index')) { suffixes.index = true; rest = rest.slice(0, -6); continue; }
     break;
   }
   const wholeDir = /\/\s*$/.test(rest);
