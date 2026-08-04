@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { normalizeId, isGh, diskPath, ghParts, parseReference } = require('../lib/ids');
+const { normalizeId, isGh, diskPath, ghParts, parseReference } = require('../dist/index.js');
 
 test('normalizeId: hub IDs fold case; gh: paths preserve it (GitHub paths are case-sensitive)', () => {
   assert.equal(normalizeId('GH:SylphAI-Inc/Skills/Deploy/'), 'gh:SylphAI-Inc/Skills/Deploy');
@@ -41,9 +41,9 @@ test('ghParts splits owner/repo/sub', () => {
 });
 
 test('parseReference handles greedy path + orthogonal suffixes', () => {
-  assert.deepEqual(parseReference('@skills:a/b:save'), { id: 'a/b', wholeDir: false, save: true, install: false });
-  assert.deepEqual(parseReference('@skills:a/b:save:install'), { id: 'a/b', wholeDir: false, save: true, install: true });
-  assert.deepEqual(parseReference('@skills:a/b:install:save'), { id: 'a/b', wholeDir: false, save: true, install: true });
+  assert.deepEqual(parseReference('@skills:a/b:save'), { id: 'a/b', wholeDir: false, save: true, install: false, index: false });
+  assert.deepEqual(parseReference('@skills:a/b:save:install'), { id: 'a/b', wholeDir: false, save: true, install: true, index: false });
+  assert.deepEqual(parseReference('@skills:a/b:install:save'), { id: 'a/b', wholeDir: false, save: true, install: true, index: false });
   const dir = parseReference('@skills:stripe/agent-toolkit/');
   assert.equal(dir.id, 'stripe/agent-toolkit');
   assert.equal(dir.wholeDir, true);

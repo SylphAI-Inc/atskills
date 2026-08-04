@@ -1,11 +1,18 @@
 'use strict';
+// .autotrigger semantics — dist/autotrigger.js + the residency block builder.
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const trigger = require('../lib/autotrigger');
-const { buildPrompt } = require('../lib/prompt');
+const {
+  parseTriggers,
+  expandLocalTriggers,
+  addTriggerLine,
+  removeTriggerLine,
+  hasTriggerLine,
+  buildAutotriggerIndex,
+} = require('../dist/index.js');
 
 function project() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atskills-at-'));
@@ -20,35 +27,39 @@ function skill(root, rel, name) {
   return dir;
 }
 
-const noNetCache = { fetch: async () => { throw new Error('network disabled in test'); } };
-
-test('parse: comments, blanks, duplicates', () => {
+test('parse: comments, blanks, duplicates — gitignore semantics', () => {
   const root = project();
   fs.writeFileSync(path.join(root, '.autotrigger'), [
     '# comment only',
-    'alpha   # yours',
+    'alpha',
     '',
     'alpha',
     '@gh:acme/skills/deploy',
     'team/  ',
   ].join('\n'));
-  const entries = trigger.parse(root);
+  const entries = parseTriggers(root);
   assert.deepEqual(entries.map((e) => e.line), ['alpha', '@gh:acme/skills/deploy', 'team/']);
   assert.equal(entries[1].cloud, true);
   assert.equal(entries[2].cloud, false); // plain = gitignore pattern
 });
 
-test('addLine/removeLine round-trip, idempotent, comment-safe', () => {
+test('a # inside a pattern is literal (gitignore rule) — only column 1 comments', () => {
   const root = project();
-  assert.equal(trigger.addLine(root, 'alpha'), true);
-  assert.equal(trigger.addLine(root, 'alpha'), false);
-  assert.equal(trigger.hasLine(root, 'alpha'), true);
-  assert.equal(trigger.removeLine(root, 'alpha'), true);
-  assert.equal(trigger.hasLine(root, 'alpha'), false);
-  assert.equal(trigger.removeLine(root, 'alpha'), false);
+  fs.writeFileSync(path.join(root, '.autotrigger'), 'c#-patterns\n  # indented comment\n');
+  assert.deepEqual(parseTriggers(root).map((e) => e.line), ['c#-patterns']);
 });
 
-test('expand: local skills, dir lines, saved provenance, per-line errors', async () => {
+test('addTriggerLine/removeTriggerLine round-trip, idempotent', () => {
+  const root = project();
+  assert.equal(addTriggerLine(root, 'alpha'), true);
+  assert.equal(addTriggerLine(root, 'alpha'), false);
+  assert.equal(hasTriggerLine(root, 'alpha'), true);
+  assert.equal(removeTriggerLine(root, 'alpha'), true);
+  assert.equal(hasTriggerLine(root, 'alpha'), false);
+  assert.equal(removeTriggerLine(root, 'alpha'), false);
+});
+
+test('expand: local skills, dir lines, saved provenance, per-line errors', () => {
   const root = project();
   skill(root, 'my-tdd', 'my-tdd');
   skill(root, 'team/deploy', 'deploy');
@@ -67,10 +78,10 @@ test('expand: local skills, dir lines, saved provenance, per-line errors', async
     'gh/acme/skills/deploy',
     'broken',
     'missing-skill',
-    '@gh:acme/skills/deploy   # shadowed by the saved copy: resolves local',
+    '@gh:acme/skills/deploy',
   ].join('\n'));
 
-  const entries = await trigger.expand(noNetCache, root);
+  const entries = expandLocalTriggers(root);
   const ok = entries.filter((e) => !e.error);
   const errs = entries.filter((e) => e.error);
 
@@ -86,26 +97,24 @@ test('expand: local skills, dir lines, saved provenance, per-line errors', async
   assert.match(errs.find((e) => e.line === 'missing-skill').error, /matches nothing/);
 });
 
-test('buildPrompt: exact text plus read trail', async () => {
+test('buildAutotriggerIndex: header + project-relative rows', async () => {
   const root = project();
   skill(root, 'my-tdd', 'my-tdd');
   fs.writeFileSync(path.join(root, '.autotrigger'), 'my-tdd\n');
 
-  const { text, sections, tokens } = await buildPrompt(noNetCache, root);
-  // the index entry ends with the READABLE path, like adal's skills index
+  const text = await buildAutotriggerIndex({ workingDir: path.dirname(root) });
+  assert.match(text, /^Auto-triggered Skills \(\.atskills\/\.autotrigger\):/);
+  // the index entry ends with the READABLE project-relative path
   assert.match(text, /- my-tdd: about my-tdd \(\.atskills\/my-tdd\/SKILL\.md\)/);
-  assert.match(text, /read the file at the path in parentheses/);
-  assert.ok(tokens > 0);
-  assert.equal(sections.length, 1);
-  assert.ok(sections[0].ref.endsWith(path.join('my-tdd', 'SKILL.md')));
 });
 
-test('expand with empty/missing .autotrigger is empty, not an error', async () => {
+test('buildAutotriggerIndex: empty when nothing triggers — a real value, not an error', async () => {
   const root = project();
-  assert.deepEqual(await trigger.expand(noNetCache, root), []);
+  assert.equal(await buildAutotriggerIndex({ workingDir: path.dirname(root) }), '');
+  assert.deepEqual(expandLocalTriggers(root), []);
 });
 
-test('plain lines use real gitignore semantics: globs and ! negation', async () => {
+test('plain lines use real gitignore semantics: globs and ! negation', () => {
   const root = project();
   skill(root, 'writing/commit-messages', 'commit-messages');
   skill(root, 'writing/drafts', 'drafts');
@@ -114,7 +123,7 @@ test('plain lines use real gitignore semantics: globs and ! negation', async () 
   // (same as .gitignore); the git idiom is dir/* + !dir/excluded
   fs.writeFileSync(path.join(root, '.autotrigger'), 'writing/*\n!writing/drafts\nsec-*\n');
 
-  const entries = await trigger.expand(noNetCache, root);
+  const entries = expandLocalTriggers(root);
   const names = entries.filter((e) => !e.error).map((e) => e.fm.name).sort();
   assert.deepEqual(names, ['commit-messages', 'sec-checklist']); // drafts negated out, glob matched
 });

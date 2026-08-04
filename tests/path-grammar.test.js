@@ -15,8 +15,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { normalizeId, referenceSpelling } = require('../lib/ids');
-const { walkSkills } = require('../lib/fsx');
+const { normalizeId, referenceSpelling } = require('../dist/index.js');
+const { walkSkills } = require('../dist/index.js');
 
 test('accepts the ecosystem standard skill locations', () => {
   for (const dir of ['.claude', '.agents', '.gemini', '.kiro', '.atskills']) {

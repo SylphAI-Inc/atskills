@@ -1,9 +1,9 @@
 'use strict';
-// Save over REAL git remotes on disk (file://) through the gitBase seam —
+// Save over REAL git remotes on disk (file://) through the githubBaseUrl seam —
 // the same transport GitHub speaks, no network. This is the coverage the
 // live-repo run proved was missing: the cap must refuse on the SAVE path
-// before anything lands, and a refusal must never fall through to the
-// per-file fallback (a refusal is a verdict, not a transport failure).
+// before anything lands, and a refusal must never fall through to a transport
+// error (a refusal is a verdict).
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -13,14 +13,11 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'atskills-gitbase-'));
-process.env.ATSKILLS_CACHE = path.join(tmpBase, 'cache');
 
-const { Cache } = require('../lib/cache');
-const { save } = require('../lib/save');
-const { diskPath } = require('../lib/ids');
+const { saveSkillToProject, diskPath } = require('../dist/index.js');
 
 const remotesDir = path.join(tmpBase, 'remotes');
-const gitBase = `file://${remotesDir}`;
+const githubBaseUrl = `file://${remotesDir}`;
 
 function gitIn(cwd, ...args) {
   return execFileSync(
@@ -50,22 +47,25 @@ function makeRemote(owner, repo, files) {
   return gitIn(dir, 'rev-parse', 'HEAD');
 }
 
+/** A fresh project; returns per-project resolver opts (isolated cache too). */
 function project() {
-  const root = fs.mkdtempSync(path.join(tmpBase, 'proj-'));
-  fs.mkdirSync(path.join(root, '.atskills'));
-  return path.join(root, '.atskills');
+  const workingDir = fs.mkdtempSync(path.join(tmpBase, 'proj-'));
+  fs.mkdirSync(path.join(workingDir, '.atskills'));
+  return {
+    root: path.join(workingDir, '.atskills'),
+    opts: { workingDir, cacheDir: path.join(workingDir, '.cache'), githubBaseUrl },
+  };
 }
 
 const SKILL = '---\nname: mine\ndescription: v1\n---\nv1 body\n';
 
-test('save via gitBase: lands at the vendored path with a two-line .source', async () => {
+test('save via githubBaseUrl: lands at the vendored path with a two-line .source', async () => {
   const sha = makeRemote('acme', 'skills', { 'mine/SKILL.md': SKILL });
-  const root = project();
+  const { root, opts } = project();
 
-  const r = await save(new Cache(), 'gh:acme/skills/mine', root, { gitBase });
+  const r = await saveSkillToProject('gh:acme/skills/mine', opts);
 
-  assert.equal(r.action, 'saved');
-  assert.equal(r.revision, sha);
+  assert.equal(r.success, true);
   const dest = path.join(root, diskPath('gh:acme/skills/mine'));
   assert.equal(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8'), SKILL);
   const [line1, line2] = fs.readFileSync(path.join(dest, '.source'), 'utf8').trim().split('\n');
@@ -75,33 +75,32 @@ test('save via gitBase: lands at the vendored path with a two-line .source', asy
 
 test('save-again: unedited copy is replaced when upstream moves', async () => {
   makeRemote('acme', 'again', { 'mine/SKILL.md': SKILL });
-  const root = project();
-  await save(new Cache(), 'gh:acme/again/mine', root, { gitBase });
+  const { root, opts } = project();
+  await saveSkillToProject('gh:acme/again/mine', opts);
 
   const next = SKILL.replace(/v1/g, 'v2');
   const shaB = makeRemote('acme', 'again', { 'mine/SKILL.md': next });
-  const r = await save(new Cache(), 'gh:acme/again/mine', root, { gitBase });
+  const r = await saveSkillToProject('gh:acme/again/mine', opts);
 
-  assert.equal(r.action, 'updated');
-  assert.equal(r.revision, shaB);
+  assert.equal(r.success, true);
   const dest = path.join(root, diskPath('gh:acme/again/mine'));
   assert.equal(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8'), next);
+  assert.match(fs.readFileSync(path.join(dest, '.source'), 'utf8'), new RegExp(`rev:${shaB}`));
 });
 
 test('save-again: edited copy is a conflict — nothing touched', async () => {
   makeRemote('acme', 'edited', { 'mine/SKILL.md': SKILL });
-  const root = project();
-  await save(new Cache(), 'gh:acme/edited/mine', root, { gitBase });
+  const { root, opts } = project();
+  await saveSkillToProject('gh:acme/edited/mine', opts);
 
   const dest = path.join(root, diskPath('gh:acme/edited/mine'));
   const mine = `${SKILL}\nhouse rules\n`;
   fs.writeFileSync(path.join(dest, 'SKILL.md'), mine);
   makeRemote('acme', 'edited', { 'mine/SKILL.md': SKILL.replace(/v1/g, 'v3') });
 
-  await assert.rejects(
-    () => save(new Cache(), 'gh:acme/edited/mine', root, { gitBase }),
-    /conflict/,
-  );
+  const r = await saveSkillToProject('gh:acme/edited/mine', opts);
+  assert.equal(r.success, false);
+  assert.match(r.error, /conflict/);
   assert.equal(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8'), mine);
 });
 
@@ -111,16 +110,14 @@ test('cap on the save path: refusal is a verdict — no fallback, nothing create
     files[`skills/s${String(i).padStart(3, '0')}/SKILL.md`] = `---\nname: s${i}\ndescription: d\n---\nb\n`;
   }
   makeRemote('mega', 'catalog', files);
-  const root = project();
+  const { root, opts } = project();
 
-  // TOO_LARGE must surface AS TOO_LARGE: the per-file fallback would have hit
-  // the network and re-downloaded exactly what the cap rejected. With a
-  // file:// base the fallback CANNOT succeed, so reaching it would also turn
-  // the honest refusal into a bogus transport error.
-  await assert.rejects(
-    () => save(new Cache(), 'gh:mega/catalog', root, { gitBase }),
-    (err) => err.code === 'TOO_LARGE' && /130 skills/.test(err.message),
-  );
+  // TOO_LARGE must surface AS the cap refusal, with the real count — with a
+  // file:// base any per-file fallback CANNOT succeed, so a transport error
+  // here would mean the refusal fell through instead of being a verdict.
+  const r = await saveSkillToProject('gh:mega/catalog', opts);
+  assert.equal(r.success, false);
+  assert.match(r.error, /130 skills/);
   assert.deepEqual(
     fs.readdirSync(root).filter((n) => !n.startsWith('.')),
     [],
@@ -132,9 +129,9 @@ test('a single skill with a huge bundle is never refused — the cap counts skil
   const files = { 'solo/SKILL.md': '---\nname: solo\ndescription: one\n---\nb\n' };
   for (let i = 0; i < 200; i++) files[`solo/references/r${i}.md`] = `ref ${i}`;
   makeRemote('mega', 'bundle', files);
-  const root = project();
+  const { root, opts } = project();
 
-  const r = await save(new Cache(), 'gh:mega/bundle/solo', root, { gitBase });
-  assert.equal(r.action, 'saved');
+  const r = await saveSkillToProject('gh:mega/bundle/solo', opts);
+  assert.equal(r.success, true);
   assert.ok(fs.existsSync(path.join(root, diskPath('gh:mega/bundle/solo'), 'references', 'r0.md')));
 });
