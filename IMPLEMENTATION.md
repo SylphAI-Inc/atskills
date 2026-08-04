@@ -36,7 +36,7 @@ The same principle sends bigger jobs to system tools:
 |---|---|---|
 | `ids.js` | identity | `normalizeId` (hub lowercase, `gh:` case-preserving, `gh/`→`gh:` fold, pasted GitHub URLs with `/tree|/blob/<branch>` spliced), `parseReference` (`:save`/`:install`, order-free), traversal-rejecting segment validation |
 | `fsx.js` | shared rules | `walkSkills` (leaf rule: stop at SKILL.md; skip dotfiles), `frontmatter` (CRLF + YAML block scalars), `nearestSource` (closest-`.source`-above = origin), `safeJoin` (escape guard), `pool` (bounded fan-out) |
-| `cache.js` | §1.2 cache | global validating cache, browser semantics: ETag/If-None-Match, 304=reuse, offline=stale+warn, 404=gone-with-cached-copy-offer; skill files materialize at a **readable tree path** (`~/.atskills/cache/gh/owner/…/SKILL.md`), metadata under `.meta/`, API blobs under `.blobs/`; binary-safe; always deletable |
+| `cache.js` | §1.2 cache | global validating cache, browser semantics: ETag/If-None-Match, 304=reuse, offline=stale+warn, 404=gone-with-cached-copy-offer; skill files materialize at a **readable tree path** (`~/.cache/atskills/gh/owner/…/SKILL.md`), metadata under `.meta/`, API blobs under `.blobs/`; binary-safe; always deletable |
 | `sources.js` | §1.2–1.3 | GitHub raw/trees/ls-remote, hub behind the same interface (gated on `ATSKILLS_HUB` until atskills.one ships), `webUrl` (the human review page) |
 | `resolve.js` | §1 | local-first **by path**; `.source` never consulted; cloud results carry `cachePath`/`cacheDir` (local, readable); directory = menu with per-child name/description/file/bundle |
 | `autotrigger.js` | §2 | plain lines = literal **gitignore patterns** over the local tree (matched by the `ignore` package — globs and negation work exactly as in git); `@` lines = cloud IDs, local-first; per-line and per-child failures isolated; atomic tmp+rename writes; `addLine`/`removeLine`/`hasLine` are the single write path shared by suffixes, checkboxes, and the install box |
@@ -81,7 +81,7 @@ Verified guarantees (each exercised by the test suite or the PTY E2E):
   invisible metadata.
 - **Network is bounded.** Every fetch has a timeout; fan-out is pooled (8-wide);
   git operations are one process per save.
-- **The cache is disposable.** Deleting `~/.atskills/cache` (or any entry) is
+- **The cache is disposable.** Deleting `~/.cache/atskills` (or any entry) is
   always safe — paths re-resolve; metadata and blobs live in dot-dirs so the
   cache tree lists like a filesystem of skills.
 - **Text tolerance.** Frontmatter parsing handles CRLF, quoted values, and YAML

@@ -46,6 +46,10 @@ export {
   largestUsableCollections,
   parseTreeListing,
   formatBytes,
+  // Exported so hosts locate the cache by calling the protocol rather than
+  // rebuilding the path — a hardcoded copy silently looks in the wrong place
+  // the moment the default moves (as it just did).
+  DEFAULT_CACHE_DIR,
   SkillCollectionTooLargeError,
   type SkillResolverOpts,
   type TreeEntry,

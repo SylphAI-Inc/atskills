@@ -9,9 +9,10 @@ export interface SkillResolverOpts {
     workingDir: string;
     /**
      * Global validating cache root for cloud fetches. Defaults to
-     * `~/.atskills/cache` — the protocol's shared location, agent-neutral: any
-     * atskills implementation on the machine reads and writes the same tree
-     * (`<cacheDir>/<disk path>` bodies, revision stamps under `.meta/`).
+     * `~/.cache/atskills` (see DEFAULT_CACHE_DIR) — the protocol's shared
+     * location, agent-neutral: any atskills implementation on the machine reads
+     * and writes the same tree (`<cacheDir>/<disk path>` bodies, revision stamps
+     * under `.meta/`). Never inside `.atskills/`, which is the project's.
      * Entries are always safe to delete; the path re-resolves.
      */
     cacheDir?: string;
@@ -31,6 +32,24 @@ export interface SkillResolverOpts {
     /** Injected log sink; the package never assumes a host logger. */
     log?: Logger;
 }
+/**
+ * The protocol's global cache — one tree per machine, shared by every agent.
+ *
+ * It lives OUTSIDE `.atskills/` on purpose. It used to be `~/.atskills/cache`,
+ * which collides with the project tree whenever a project's root is the home
+ * directory: `.atskills/` is then both the project's skills and the machine's
+ * cache, so downloaded copies enumerate as the user's own skills (observed: 54
+ * of them). Checking one would write an `.autotrigger` line — git-tracked —
+ * pointing into a machine-local, evictable cache that resolves to nothing on a
+ * teammate's machine. No name under `.atskills/` avoids this; only being
+ * outside it does.
+ *
+ * `$XDG_CACHE_HOME/atskills`, falling back to `~/.cache/atskills`: a cache in
+ * the place the OS already reserves for caches, which is also what makes it
+ * obviously safe to delete. Entries always re-resolve; `ATSKILLS_CACHE`
+ * overrides.
+ */
+export declare const DEFAULT_CACHE_DIR: string;
 /** `.atskills/` for a project root. */
 export declare function skillsRoot(workingDir: string): string;
 /**

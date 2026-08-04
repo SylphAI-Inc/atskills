@@ -37,7 +37,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SkillCollectionTooLargeError = void 0;
+exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = void 0;
 exports.skillsRoot = skillsRoot;
 exports.resolveSkill = resolveSkill;
 exports.resolveLocal = resolveLocal;
@@ -71,8 +71,24 @@ const ids_js_1 = require("./ids.js");
 const fsx_js_1 = require("./fsx.js");
 const autotrigger_js_1 = require("./autotrigger.js");
 const GITHUB_GIT_BASE = 'https://github.com';
-/** The protocol's global cache — one tree per machine, shared by every agent. */
-const DEFAULT_CACHE_DIR = path.join(os.homedir(), '.atskills', 'cache');
+/**
+ * The protocol's global cache — one tree per machine, shared by every agent.
+ *
+ * It lives OUTSIDE `.atskills/` on purpose. It used to be `~/.atskills/cache`,
+ * which collides with the project tree whenever a project's root is the home
+ * directory: `.atskills/` is then both the project's skills and the machine's
+ * cache, so downloaded copies enumerate as the user's own skills (observed: 54
+ * of them). Checking one would write an `.autotrigger` line — git-tracked —
+ * pointing into a machine-local, evictable cache that resolves to nothing on a
+ * teammate's machine. No name under `.atskills/` avoids this; only being
+ * outside it does.
+ *
+ * `$XDG_CACHE_HOME/atskills`, falling back to `~/.cache/atskills`: a cache in
+ * the place the OS already reserves for caches, which is also what makes it
+ * obviously safe to delete. Entries always re-resolve; `ATSKILLS_CACHE`
+ * overrides.
+ */
+exports.DEFAULT_CACHE_DIR = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'atskills');
 /**
  * Hub entries have no revision probe (unlike git's ls-remote), so a cached
  * copy this fresh answers without a network round-trip.
@@ -115,7 +131,7 @@ async function resolveSkill(id, save, opts, install = false) {
     else {
         // ── Cloud, through the global validating cache ──
         try {
-            result = await readThroughCache(skillId, opts.cacheDir ?? DEFAULT_CACHE_DIR, opts);
+            result = await readThroughCache(skillId, opts.cacheDir ?? exports.DEFAULT_CACHE_DIR, opts);
         }
         catch (e) {
             result = { success: false, error: e instanceof Error ? e.message : String(e) };
