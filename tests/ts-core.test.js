@@ -86,6 +86,25 @@ test('local first, by path — a folder answers its own address', opts, async ()
   assert.match(r.content, /How we do TDD/);
 });
 
+test('a bare path never reaches the network — the prefix decides (§5.0)', opts, async () => {
+  const core = await import(DIST);
+  const workingDir = project();
+
+  // A registry IS configured, pointed at a port nothing listens on: under the
+  // old local-first-then-cloud rule this shape fell through and fetched. Now
+  // the miss is terminal, so no connection is ever attempted.
+  const r = await core.resolveSkill('someone/elses-skill', false, {
+    ...resolverOpts(workingDir),
+    registryBaseUrl: 'http://127.0.0.1:1/should-never-be-called',
+  });
+
+  assert.equal(r.success, false);
+  assert.match(r.error, /\.atskills\/someone\/elses-skill/); // says where it looked
+  assert.match(r.error, /hub:owner\/name/);                  // and how to reach the cloud
+  assert.match(r.error, /gh:owner\/repo\/path/);
+  assert.doesNotMatch(r.error, /registry|HTTP|ECONN|fetch/i); // no fetch was attempted
+});
+
 test('the validating cache — unchanged serves the cache, changed fetches fresh', opts, async () => {
   const core = await import(DIST);
   const workingDir = project();

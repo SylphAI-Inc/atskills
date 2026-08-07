@@ -6,19 +6,26 @@ CLI in this repo — `atskills get|save|triggers|prompt` — and inherit all of 
 
 A **skill** is a folder with a `SKILL.md` (Agent Skills standard: frontmatter `name` +
 `description`, then instructions; may bundle scripts and references). Its **path is its
-identity**: `sylphai/glowmotion` is a hub name; `gh:acme/skills/deploy` is a GitHub
-address (on disk, `gh:` is spelled `gh/` — folder names can't hold colons). Hub IDs
-are lowercase; `gh:` paths keep GitHub's casing (GitHub paths are case-sensitive).
+identity**, and **the prefix decides where it comes from**:
+
+- `deploy`, `team-flows/deploy` — **bare means the project's own**, `.atskills/<path>`.
+  A bare path NEVER reaches the network. If nothing is there, say so and name the
+  cloud forms; do not guess, do not fetch.
+- `hub:sylphai/glowmotion` — the hub. Exactly two segments, lowercase.
+- `gh:acme/skills/deploy` — GitHub. Keeps GitHub's casing (paths are case-sensitive).
+
+On disk the markers are spelled `hub/` and `gh/` — folder names can't hold colons.
 Pasted GitHub URLs are valid references: `github.com/owner/repo[/tree/<branch>|/blob/<branch>]/path`
 normalizes to `gh:owner/repo/path` (the branch segment drops; HEAD — the default
 branch — is what fetches).
 
 ## 1. Resolve `@skills:<path>`
 
-1. **Local first, by path.** A folder at `.atskills/<path>` (spell `gh:` as `gh/`) →
-   it's the project's own; read it, use it, stop. That is the whole local rule —
-   `.source` is never consulted to resolve. No folder there → the path means the
-   cloud.
+0. **The prefix decides.** Bare → local only; a miss is an error, never a fetch.
+   `hub:`/`gh:` → the cloud, but still local-first (rule 1), so a saved copy answers.
+1. **Local first, by path.** A folder at `.atskills/<path>` (spell `gh:` as `gh/`,
+   `hub:` as `hub/`) → it's the project's own; read it, use it, stop. That is the
+   whole local rule — `.source` is never consulted to resolve.
 2. **Else fetch, through a cache.** Hub: `curl -fsSL https://adal.sylph.ai/api/skills/<path>`
    (returns SKILL.md; append `/<file>` for bundled files; atskills.one will serve the
    same). GitHub: `curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/HEAD/<sub>/SKILL.md`.

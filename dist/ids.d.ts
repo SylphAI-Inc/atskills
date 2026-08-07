@@ -8,7 +8,12 @@
  */
 export declare function referenceSpelling(id: string): string;
 export declare const GH_PREFIX = "gh:";
+export declare const HUB_PREFIX = "hub:";
 export declare const SKILLS_DIR = ".atskills";
+/** True when the ID names the cloud — i.e. it carries a marker. */
+export declare function isCloud(id: string): boolean;
+/** True when the ID is the project's own: no marker, so never a fetch. */
+export declare function isLocalOnly(id: string): boolean;
 /**
  * The most skills one reference may resolve to.
  *

@@ -6,11 +6,17 @@
 /**
  * Skill resolver — the `@skills:` half of the protocol.
  *
- * The whole rule is **local first, by path**: a folder at `.atskills/<path>`
- * (`gh:` spelled `gh/`) is the project's own and always answers; no folder
- * there means the path means the cloud. `.source` is NEVER consulted to
- * resolve anything — a saved copy answers its own address because it sits at
- * the ID's own path (vendoring), not because a manifest says so.
+ * The whole rule is **the prefix decides, then local first**. A bare path is
+ * the project's own (`.atskills/<path>`) and NEVER reaches the network — a
+ * miss is an error naming the cloud forms, not a silent fetch. `hub:` and
+ * `gh:` name the cloud and still resolve local-first, so a saved copy answers
+ * its own address. `.source` is NEVER consulted to resolve anything — a saved
+ * copy answers because it sits at the ID's own path (vendoring), not because
+ * a manifest says so.
+ *
+ * That asymmetry is the point: a reference cannot change meaning because a
+ * folder appeared or vanished, which matters most for `.autotrigger` lines,
+ * which are git-tracked and run unattended on a teammate's machine.
  *
  * A directory with no SKILL.md is not a failure — it's a menu: one row per
  * skill under it, each row a valid path the agent can read on demand.
@@ -34,6 +40,7 @@ import {
   diskPath,
   ghParts,
   isGh,
+  isLocalOnly,
   normalizeId,
   webUrl,
 } from './ids.js';
@@ -151,6 +158,17 @@ export async function resolveSkill(
     result = await saveSkillToProject(skillId, opts);
   } else if (local) {
     result = local;
+  } else if (isLocalOnly(skillId)) {
+    // ── A bare path is the project's own, and only that ──
+    // No network fallback: the prefix decides, so a reference can never change
+    // meaning because a folder appeared or vanished. The miss is where
+    // discovery belongs — name the forms that WOULD reach the cloud.
+    result = {
+      success: false,
+      error:
+        `No skill at ${SKILLS_DIR}/${diskPath(skillId)}. A bare path means the project's own skills; ` +
+        `for the cloud, say where: 'hub:owner/name' or 'gh:owner/repo/path'.`,
+    };
   } else {
     // ── Cloud, through the global validating cache ──
     try {
