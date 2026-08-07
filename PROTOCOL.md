@@ -76,7 +76,9 @@ None are required. A resolved skill is just files on disk, so agents that load s
 @skills:<path>:save:install          both — the suffixes are orthogonal
 ```
 
-- `gh:` paths keep GitHub's casing beyond the marker (GitHub paths are case-sensitive). On disk, `gh:` is spelled `gh/` — folder names cannot hold colons.
+- **A bare path is local, always.** `deploy` and `team-flows/deploy` mean `.atskills/deploy` and `.atskills/team-flows/deploy`. They never reach the network (§5.0).
+- **`hub:owner/name`** is a hub skill — exactly two segments, lowercase (resolvers fold case so a name can never split an address). **`gh:owner/repo/path`** is GitHub.
+- `gh:` paths keep GitHub's casing beyond the marker (GitHub paths are case-sensitive). On disk the markers are spelled `gh/` and `hub/` — folder names cannot hold colons.
 - Pasted GitHub URLs (`github.com/<o>/<r>/tree/<branch>/<path>`, blob URLs, trailing `SKILL.md`) are valid references and normalize to the `gh:` form.
 - The grammar is greedy: the path runs to the end of the token or the trailing suffixes. Several `@skills:` references in one message all load, each at its own point of use.
 - Segment grammar — what characters a path segment may hold — is normative and specified in §8.2.1.
@@ -95,7 +97,8 @@ flowchart TD
     O -- "no" --> X["fail, say why"]
 ```
 
-1. **Local first, by path.** A folder at `.atskills/<path>` (`gh:` spelled `gh/`) is the project's own and always answers; no folder there means the path means the cloud. Nothing else is consulted — in particular `.source` (§6) is **never** read to resolve. A saved copy answers its own address because it *sits* at that address (vendoring — Go's `vendor/`, node's `node_modules/@scope`).
+0. **The prefix decides.** A reference states where it comes from, so resolution never guesses. A **bare path is the project's own** — `.atskills/<path>` — and MUST NOT reach the network under any circumstances; a miss is an error naming the cloud forms, never a silent fetch. `hub:` and `gh:` name the cloud. This is what makes a reference's meaning independent of filesystem state: a path cannot come to mean a stranger's skill because a local folder was deleted, nor stop meaning one because a folder was added. It matters most in `.autotrigger` (§7), whose lines are git-tracked and run unattended on machines that are not the author's.
+1. **Then local first, by path.** For a prefixed ID, a folder at `.atskills/<path>` (`gh:` spelled `gh/`, `hub:` spelled `hub/`) is the project's own and always answers. Nothing else is consulted — in particular `.source` (§6) is **never** read to resolve. A saved copy answers its own address because it *sits* at that address (vendoring — Go's `vendor/`, node's `node_modules/@scope`).
 2. **Else the cloud, through the global cache.** Cloud content materializes under one machine-wide, agent-neutral root — `$XDG_CACHE_HOME/atskills/<disk path>`, defaulting to `~/.cache/atskills/<disk path>` — shared by every conforming client. This root MUST NOT live inside any `.atskills/` directory: a project whose root is the home directory would otherwise enumerate the machine's cache as its own skills, and an auto-trigger line written against a cached copy is git-tracked but machine-local. The cache validates like a browser: each use asks the source "did this change?" (one revision probe, never a re-download); unchanged serves the cache instantly, changed fetches fresh, unreachable serves the cache with a stale warning, unreachable-with-nothing-cached fails and says exactly why. Entries are always safe to delete; the path re-resolves.
 3. **A directory is a menu.** No `SKILL.md` at the path → list the skills beneath it (leaf rule), one line per skill, `path: description`, subject to the collection cap (§8.3). Browsing and using are the same gesture; a collection is taken subtree by subtree, at any granularity, and the cache means narrowing never re-pays for what already landed.
 

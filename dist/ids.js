@@ -4,8 +4,10 @@
  * Copyright 2025 SylphAI Inc.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SOURCE_FILE = exports.AUTOTRIGGER_FILE = exports.MAX_COLLECTION_SKILLS = exports.SKILLS_DIR = exports.GH_PREFIX = void 0;
+exports.SOURCE_FILE = exports.AUTOTRIGGER_FILE = exports.MAX_COLLECTION_SKILLS = exports.SKILLS_DIR = exports.HUB_PREFIX = exports.GH_PREFIX = void 0;
 exports.referenceSpelling = referenceSpelling;
+exports.isCloud = isCloud;
+exports.isLocalOnly = isLocalOnly;
 exports.fromGithubUrl = fromGithubUrl;
 exports.normalizeId = normalizeId;
 exports.isGh = isGh;
@@ -16,12 +18,14 @@ exports.parseReference = parseReference;
 /**
  * Skill IDs — the address half of the @skills protocol.
  *
- * `owner/path` is a hub name; `gh:owner/repo/path` is a GitHub address. One ID,
- * one spelling — on disk `gh:` is spelled `gh/`, because folder names can't
- * hold colons. Hub IDs are lowercase (resolvers fold case); `gh:` paths keep
- * GitHub's casing, which is significant there.
+ * THE PREFIX DECIDES. A bare path is the project's own (`.atskills/<path>`)
+ * and never reaches the network; `hub:owner/name` is the hub; and
+ * `gh:owner/repo/path` is GitHub. Resolution therefore never guesses, and a
+ * reference cannot change meaning because a folder appeared or vanished.
  *
- * Ported from SylphAI-Inc/atskills lib/ids.js.
+ * One ID, one spelling — on disk the markers are spelled `hub/` and `gh/`,
+ * because folder names can't hold colons. Hub IDs are lowercase (resolvers
+ * fold case); `gh:` paths keep GitHub's casing, which is significant there.
  */
 /**
  * Two spellings of one address.
@@ -58,7 +62,7 @@ function decodeSegment(seg) {
  */
 function referenceSpelling(id) {
     const text = String(id);
-    const prefix = /^gh:/i.test(text) ? exports.GH_PREFIX : '';
+    const prefix = /^gh:/i.test(text) ? exports.GH_PREFIX : /^hub:/i.test(text) ? exports.HUB_PREFIX : '';
     return (prefix +
         text
             .slice(prefix.length)
@@ -85,7 +89,18 @@ function badSegment(seg) {
     return false;
 }
 exports.GH_PREFIX = 'gh:';
+exports.HUB_PREFIX = 'hub:';
 exports.SKILLS_DIR = '.atskills';
+/** Every marker that means "not local". A bare path is the project's own. */
+const CLOUD_PREFIXES = [exports.GH_PREFIX, exports.HUB_PREFIX];
+/** True when the ID names the cloud — i.e. it carries a marker. */
+function isCloud(id) {
+    return CLOUD_PREFIXES.some((p) => id.startsWith(p));
+}
+/** True when the ID is the project's own: no marker, so never a fetch. */
+function isLocalOnly(id) {
+    return !isCloud(id);
+}
 /**
  * The most skills one reference may resolve to.
  *
@@ -157,6 +172,22 @@ function normalizeId(raw) {
         }
         return exports.GH_PREFIX + segments.join('/');
     }
+    // `hub/` is the DISK spelling of `hub:` — fold it back, so a vendored hub
+    // skill works as a reference even when no local folder answers it.
+    if (/^hub\//i.test(id))
+        id = exports.HUB_PREFIX + id.slice(4);
+    if (/^hub:/i.test(id)) {
+        // Hub IDs are lowercase throughout; the marker folds with the rest.
+        const segments = id.slice(4).toLowerCase().split('/').map(decodeSegment);
+        if (segments.length !== 2) {
+            throw new Error(`hub: paths are exactly owner/name: ${raw}`);
+        }
+        for (const seg of segments) {
+            if (badSegment(seg))
+                throw new Error(`invalid path segment "${seg}" in ${raw}`);
+        }
+        return exports.HUB_PREFIX + segments.join('/');
+    }
     const segments = id.toLowerCase().split('/').map(decodeSegment);
     for (const seg of segments) {
         if (badSegment(seg))
@@ -169,7 +200,7 @@ function isGh(id) {
 }
 /** The on-disk spelling of an ID — always relative, never escaping the root. */
 function diskPath(id) {
-    return id.replace(/^gh:/, 'gh/');
+    return id.replace(/^gh:/, 'gh/').replace(/^hub:/, 'hub/');
 }
 /**
  * The human review page for a `gh:` ID — where a person reads a cloud skill

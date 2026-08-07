@@ -1,11 +1,36 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { normalizeId, isGh, diskPath, ghParts, parseReference } = require('../dist/index.js');
+const {
+  normalizeId, isGh, isCloud, isLocalOnly, diskPath, ghParts, parseReference,
+} = require('../dist/index.js');
 
-test('normalizeId: hub IDs fold case; gh: paths preserve it (GitHub paths are case-sensitive)', () => {
+test('normalizeId: bare and hub IDs fold case; gh: preserves it (GitHub paths are case-sensitive)', () => {
   assert.equal(normalizeId('GH:SylphAI-Inc/Skills/Deploy/'), 'gh:SylphAI-Inc/Skills/Deploy');
-  assert.equal(normalizeId('Stripe/Payments'), 'stripe/payments');
+  assert.equal(normalizeId('HUB:Stripe/Payments'), 'hub:stripe/payments');
+  assert.equal(normalizeId('Team-Flows/Deploy'), 'team-flows/deploy');
+});
+
+// ── The prefix decides (PROTOCOL.md §5.0) ──
+
+test('hub: is exactly owner/name', () => {
+  assert.equal(normalizeId('hub:sylphai/glowmotion'), 'hub:sylphai/glowmotion');
+  assert.throws(() => normalizeId('hub:onlyname'), /exactly owner\/name/);
+  assert.throws(() => normalizeId('hub:a/b/c'), /exactly owner\/name/);
+});
+
+test('hub/ disk spelling folds back to hub:, like gh/', () => {
+  assert.equal(normalizeId('hub/sylphai/glowmotion'), 'hub:sylphai/glowmotion');
+  assert.equal(diskPath(normalizeId('hub:sylphai/glowmotion')), 'hub/sylphai/glowmotion');
+});
+
+test('a bare path is local; only a marker means the cloud', () => {
+  assert.equal(isCloud('gh:a/b'), true);
+  assert.equal(isCloud('hub:a/b'), true);
+  // Both shapes below used to fall through to the network.
+  assert.equal(isCloud('a/b'), false);
+  assert.equal(isCloud('deploy'), false);
+  assert.equal(isLocalOnly('team-flows/deploy'), true);
 });
 
 test('normalizeId accepts pasted GitHub URLs', () => {
