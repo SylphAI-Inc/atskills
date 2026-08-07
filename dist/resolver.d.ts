@@ -24,6 +24,20 @@ export interface SkillResolverOpts {
      */
     registryBaseUrl?: string;
     /**
+     * Bearer token for hub reads — OPT-IN, same as the registry itself.
+     *
+     * A FUNCTION, not a string: tokens expire and the host refreshes them
+     * mid-session, so a value captured when the resolver was built goes stale in
+     * a long-running TUI. Called per hub request; returning undefined means
+     * "anonymous", which is a valid answer, not an error.
+     *
+     * Anonymous sees only PUBLIC skills. A private skill belongs to an account,
+     * so reading one requires that account's token — and the registry answers
+     * 404 rather than 401 for a private skill you do not own, so that its
+     * existence is not leaked to someone who cannot read it.
+     */
+    registryAuth?: () => string | undefined | Promise<string | undefined>;
+    /**
      * Base URL that `gh:owner/repo` remotes resolve under. Defaults to
      * `https://github.com`; tests point it at local repos (`file://…`), and it
      * is the seam for GitHub Enterprise hosts.
