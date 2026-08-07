@@ -779,10 +779,23 @@ async function downloadRegistry(skillId, dest, opts) {
             `Use a gh:owner/repo/path reference (needs no hub), or set registryBaseUrl.`);
     }
     let data;
+    // Resolved per request, not per resolver: the host refreshes tokens, and a
+    // token read once at construction is the wrong one an hour later.
+    const token = await opts.registryAuth?.();
     try {
-        const response = await fetch(`${base}/resolve/${skillId}`);
-        if (response.status === 404)
-            throw new Error(`Skill '${skillId}' not found in the registry`);
+        const response = await fetch(`${base}/resolve/${skillId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (response.status === 404) {
+            // The registry answers 404 — never 401 — for a private skill you cannot
+            // read, so its existence stays hidden. That means "missing" and "not
+            // yours" are the SAME answer here, and the message has to cover both or
+            // a signed-out owner is told their own skill does not exist.
+            throw new Error(token
+                ? `Skill '${skillId}' not found in the registry.`
+                : `Skill '${skillId}' not found in the registry. ` +
+                    `If it is private, sign in — a private skill is readable only by the account that owns it.`);
+        }
         if (!response.ok)
             throw new Error(`Registry returned HTTP ${response.status} for '${skillId}'`);
         data = (await response.json());

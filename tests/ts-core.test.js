@@ -183,3 +183,119 @@ test('residency builds the exact prompt block a host splices in', opts, async ()
     'Auto-triggered Skills (.atskills/.autotrigger):\n- sec-check: Reviews security (.atskills/sec-check/SKILL.md)',
   );
 });
+
+// ── Hub auth (§5.0) ──────────────────────────────────────────────────────────
+// A private skill belongs to an account, so reading one carries that account's
+// token. The registry answers 404 — never 401 — for a private skill you cannot
+// read, so "missing" and "not yours" are indistinguishable to the client; the
+// error text has to serve both, or a signed-out owner is told their own skill
+// does not exist.
+
+/** A registry on a real port, so we can see exactly what the resolver sent. */
+function stubRegistry(handler) {
+  const http = require('node:http');
+  const server = http.createServer(handler);
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() });
+    });
+  });
+}
+
+test('hub read sends the bearer token the host supplies', opts, async () => {
+  const core = await import(DIST);
+  const workingDir = project();
+  let seen = 'UNSET';
+
+  const reg = await stubRegistry((req, res) => {
+    seen = req.headers.authorization ?? 'NONE';
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ entry: { content: '---\nname: p\ndescription: d\n---\nbody\n' } }));
+  });
+
+  try {
+    const r = await core.resolveSkill('hub:acme/private-one', false, {
+      ...resolverOpts(workingDir),
+      registryBaseUrl: reg.url,
+      registryAuth: () => 'tok-123',
+    });
+    assert.equal(r.success, true);
+    assert.equal(seen, 'Bearer tok-123');
+  } finally {
+    reg.close();
+  }
+});
+
+test('registryAuth is called per request, so a refreshed token is used', opts, async () => {
+  const core = await import(DIST);
+  const workingDir = project();
+  const sent = [];
+  let n = 0;
+
+  const reg = await stubRegistry((req, res) => {
+    sent.push(req.headers.authorization);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ entry: { content: '---\nname: p\ndescription: d\n---\nbody\n' } }));
+  });
+
+  try {
+    const o = {
+      ...resolverOpts(workingDir),
+      registryBaseUrl: reg.url,
+      // Rotates, as a real session's token does.
+      registryAuth: () => `tok-${++n}`,
+    };
+    await core.resolveSkill('hub:acme/one', false, o);
+    await core.resolveSkill('hub:acme/two', false, o);
+    assert.deepEqual(sent, ['Bearer tok-1', 'Bearer tok-2']);
+  } finally {
+    reg.close();
+  }
+});
+
+test('no token → anonymous request, and 404 says a private skill needs sign-in', opts, async () => {
+  const core = await import(DIST);
+  const workingDir = project();
+  let seen = 'UNSET';
+
+  const reg = await stubRegistry((req, res) => {
+    seen = req.headers.authorization ?? 'NONE';
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+
+  try {
+    const r = await core.resolveSkill('hub:acme/secret', false, {
+      ...resolverOpts(workingDir),
+      registryBaseUrl: reg.url,
+    });
+    assert.equal(seen, 'NONE');            // no Authorization header invented
+    assert.equal(r.success, false);
+    assert.match(r.error, /private/i);     // tells a signed-out owner what to do
+    assert.match(r.error, /sign in/i);
+  } finally {
+    reg.close();
+  }
+});
+
+test('404 WITH a token does not suggest signing in — they already are', opts, async () => {
+  const core = await import(DIST);
+  const workingDir = project();
+
+  const reg = await stubRegistry((req, res) => {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+
+  try {
+    const r = await core.resolveSkill('hub:acme/missing', false, {
+      ...resolverOpts(workingDir),
+      registryBaseUrl: reg.url,
+      registryAuth: () => 'tok-123',
+    });
+    assert.equal(r.success, false);
+    assert.doesNotMatch(r.error, /sign in/i);
+  } finally {
+    reg.close();
+  }
+});

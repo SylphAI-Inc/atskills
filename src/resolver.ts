@@ -79,6 +79,20 @@ export interface SkillResolverOpts {
    */
   registryBaseUrl?: string;
   /**
+   * Bearer token for hub reads — OPT-IN, same as the registry itself.
+   *
+   * A FUNCTION, not a string: tokens expire and the host refreshes them
+   * mid-session, so a value captured when the resolver was built goes stale in
+   * a long-running TUI. Called per hub request; returning undefined means
+   * "anonymous", which is a valid answer, not an error.
+   *
+   * Anonymous sees only PUBLIC skills. A private skill belongs to an account,
+   * so reading one requires that account's token — and the registry answers
+   * 404 rather than 401 for a private skill you do not own, so that its
+   * existence is not leaked to someone who cannot read it.
+   */
+  registryAuth?: () => string | undefined | Promise<string | undefined>;
+  /**
    * Base URL that `gh:owner/repo` remotes resolve under. Defaults to
    * `https://github.com`; tests point it at local repos (`file://…`), and it
    * is the seam for GitHub Enterprise hosts.
@@ -842,9 +856,25 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
   let data: {
     entry?: { content?: string; github_skill_path?: string; github_repo?: string; github_path?: string };
   };
+  // Resolved per request, not per resolver: the host refreshes tokens, and a
+  // token read once at construction is the wrong one an hour later.
+  const token = await opts.registryAuth?.();
   try {
-    const response = await fetch(`${base}/resolve/${skillId}`);
-    if (response.status === 404) throw new Error(`Skill '${skillId}' not found in the registry`);
+    const response = await fetch(`${base}/resolve/${skillId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (response.status === 404) {
+      // The registry answers 404 — never 401 — for a private skill you cannot
+      // read, so its existence stays hidden. That means "missing" and "not
+      // yours" are the SAME answer here, and the message has to cover both or
+      // a signed-out owner is told their own skill does not exist.
+      throw new Error(
+        token
+          ? `Skill '${skillId}' not found in the registry.`
+          : `Skill '${skillId}' not found in the registry. ` +
+            `If it is private, sign in — a private skill is readable only by the account that owns it.`,
+      );
+    }
     if (!response.ok) throw new Error(`Registry returned HTTP ${response.status} for '${skillId}'`);
     data = (await response.json()) as typeof data;
   } catch (e) {
