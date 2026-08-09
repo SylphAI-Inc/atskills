@@ -38,6 +38,7 @@ export * from './autotrigger.js';
 export * from './tree.js';
 export {
   resolveSkill,
+  resolveSkills,
   resolveLocal,
   saveSkillToProject,
   skillsRoot,

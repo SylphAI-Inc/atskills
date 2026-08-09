@@ -40,6 +40,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = void 0;
 exports.skillsRoot = skillsRoot;
 exports.resolveSkill = resolveSkill;
+exports.resolveSkills = resolveSkills;
 exports.resolveLocal = resolveLocal;
 exports.largestUsableCollections = largestUsableCollections;
 exports.parseTreeListing = parseTreeListing;
@@ -165,6 +166,62 @@ async function resolveSkill(id, save, opts, install = false) {
         }
     }
     return result;
+}
+/**
+ * Resolve SEVERAL references concurrently — composition, which is the shape
+ * real messages have.
+ *
+ * Hosts were resolving a message's references in a `for` loop with an `await`
+ * inside, so N cloud references cost N SEQUENTIAL round trips. That is the
+ * slowest path on the capability the protocol exists for: a four-reference
+ * chain paid four latencies to do work that is entirely independent.
+ *
+ * Guarantees the sequential loop gave for free, and which callers depend on:
+ *   * ORDER — results come back positionally aligned with `ids`, so a caller
+ *     can still inject each at its own point of use.
+ *   * DEDUP — a repeated id resolves ONCE and its result is shared. Beyond
+ *     saving a fetch this matters for correctness: two concurrent `:save`s of
+ *     one id would race on the same directory.
+ *   * ISOLATION — one failure never rejects the batch. A per-reference failure
+ *     is reported in its own slot and the rest of the message survives.
+ *
+ * Writes stay serialized. `save`/`install` mutate `.atskills/` and
+ * `.autotrigger`, and running those concurrently interleaves appends to one
+ * file; only the read path is parallelised, which is the part that is slow.
+ */
+async function resolveSkills(ids, opts, flags = []) {
+    if (ids.length === 0)
+        return [];
+    const mutates = (i) => Boolean(flags[i]?.save || flags[i]?.install);
+    // One promise per DISTINCT id; repeats await the same one.
+    const inFlight = new Map();
+    const results = new Array(ids.length);
+    // Pure reads first, all at once.
+    await Promise.all(ids.map(async (id, i) => {
+        if (mutates(i))
+            return;
+        let p = inFlight.get(id);
+        if (!p) {
+            p = resolveSkill(id, false, opts, false).catch((e) => ({
+                success: false,
+                error: e instanceof Error ? e.message : String(e),
+            }));
+            inFlight.set(id, p);
+        }
+        results[i] = await p;
+    }));
+    // Then anything that writes, in the order written, one at a time.
+    for (let i = 0; i < ids.length; i++) {
+        if (!mutates(i))
+            continue;
+        try {
+            results[i] = await resolveSkill(ids[i], flags[i]?.save ?? false, opts, flags[i]?.install ?? false);
+        }
+        catch (e) {
+            results[i] = { success: false, error: e instanceof Error ? e.message : String(e) };
+        }
+    }
+    return results.map((r) => r ?? { success: false, error: 'resolution produced no result' });
 }
 /** Local resolution only — used by the resolver and by `/skills` listings. */
 function resolveLocal(skillId, root) {
