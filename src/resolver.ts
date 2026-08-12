@@ -204,6 +204,7 @@ export async function resolveSkill(
   return result;
 }
 
+
 /** Local resolution only — used by the resolver and by `/skills` listings. */
 export function resolveLocal(skillId: string, root: string): LoadResponse | null {
   let dir: string;
@@ -283,7 +284,10 @@ async function fetchToDir(
     const ok = await downloadGithub(skillId, dest, opts, ref);
     if (!ok) throw new Error(`Nothing at ${skillId}${ref ? ` at rev ${ref}` : ''}`);
   } else {
-    await downloadRegistry(skillId, dest, opts);
+    const visibility = await downloadRegistry(skillId, dest, opts);
+    const described = describeMaterialized(skillId, dest, source);
+    if (visibility && described.origin) described.origin.visibility = visibility;
+    return described;
   }
 
   return describeMaterialized(skillId, dest, source);
@@ -845,7 +849,11 @@ function swapIntoPlace(staging: string, dest: string): void {
 
 /** Is there a SKILL.md at exactly this path? The one question that decides. */
 /** Resolve a hub/registry ID and materialize it at `dest`. */
-async function downloadRegistry(skillId: string, dest: string, opts: SkillResolverOpts): Promise<void> {
+async function downloadRegistry(
+  skillId: string,
+  dest: string,
+  opts: SkillResolverOpts,
+): Promise<'private' | 'public' | undefined> {
   const base = opts.registryBaseUrl;
   if (!base) {
     throw new Error(
@@ -854,7 +862,13 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
     );
   }
   let data: {
-    entry?: { content?: string; github_skill_path?: string; github_repo?: string; github_path?: string };
+    entry?: {
+      content?: string;
+      github_skill_path?: string;
+      github_repo?: string;
+      github_path?: string;
+      visibility?: 'private' | 'public';
+    };
   };
   // Resolved per request, not per resolver: the host refreshes tokens, and a
   // token read once at construction is the wrong one an hour later.
@@ -868,10 +882,15 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
       // read, so its existence stays hidden. That means "missing" and "not
       // yours" are the SAME answer here, and the message has to cover both or
       // a signed-out owner is told their own skill does not exist.
+      // Name WHICH registry answered: "not found" usually means the host is
+      // pointed at a different environment (local/staging/prod) than the one
+      // holding the skill, and without the host in the message that reads as
+      // an auth problem — the exact debugging detour it sent a user on.
+      const where = ` in the registry at ${base}`;
       throw new Error(
         token
-          ? `Skill '${skillId}' not found in the registry.`
-          : `Skill '${skillId}' not found in the registry. ` +
+          ? `Skill '${skillId}' not found${where}.`
+          : `Skill '${skillId}' not found${where}. ` +
             `If it is private, sign in — a private skill is readable only by the account that owns it.`,
       );
     }
@@ -882,6 +901,9 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
   }
 
   const entry = data?.entry ?? {};
+  // Only meaningful on the response that stated it; a cache hit later cannot
+  // know, and must not guess.
+  const visibility = entry.visibility;
   if (entry.content) {
     // Swap, never write in place: a previous resolution may have left a
     // different body (even a whole GitHub subtree) at this path.
@@ -889,7 +911,7 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
     fs.mkdirSync(staging, { recursive: true });
     fs.writeFileSync(path.join(staging, 'SKILL.md'), entry.content, 'utf-8');
     swapIntoPlace(staging, dest);
-    return;
+    return visibility;
   }
   if (entry.github_skill_path) {
     const ghId = entry.github_skill_path.startsWith(GH_PREFIX)
@@ -897,6 +919,7 @@ async function downloadRegistry(skillId: string, dest: string, opts: SkillResolv
       : normalizeId(GH_PREFIX + entry.github_skill_path.replace(/^\/+/, ''));
     const ok = await downloadGithub(ghId, dest, opts);
     if (!ok) throw new Error(`SKILL.md not found at ${entry.github_skill_path}`);
+    return visibility;
     return;
   }
   throw new Error(`Skill '${skillId}' has no content and no GitHub path`);

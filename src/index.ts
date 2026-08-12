@@ -36,6 +36,8 @@ export {
 } from './fsx.js';
 export * from './autotrigger.js';
 export * from './tree.js';
+// Composition — how a MESSAGE of references resolves, as opposed to one.
+export * from './compose.js';
 export {
   resolveSkill,
   resolveLocal,

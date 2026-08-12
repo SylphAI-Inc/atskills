@@ -49,6 +49,8 @@ Object.defineProperty(exports, "writeFileAtomic", { enumerable: true, get: funct
 Object.defineProperty(exports, "writeSource", { enumerable: true, get: function () { return fsx_js_1.writeSource; } });
 __exportStar(require("./autotrigger.js"), exports);
 __exportStar(require("./tree.js"), exports);
+// Composition — how a MESSAGE of references resolves, as opposed to one.
+__exportStar(require("./compose.js"), exports);
 var resolver_js_1 = require("./resolver.js");
 Object.defineProperty(exports, "resolveSkill", { enumerable: true, get: function () { return resolver_js_1.resolveSkill; } });
 Object.defineProperty(exports, "resolveLocal", { enumerable: true, get: function () { return resolver_js_1.resolveLocal; } });
