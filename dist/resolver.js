@@ -40,7 +40,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = void 0;
 exports.skillsRoot = skillsRoot;
 exports.resolveSkill = resolveSkill;
-exports.resolveSkills = resolveSkills;
 exports.resolveLocal = resolveLocal;
 exports.largestUsableCollections = largestUsableCollections;
 exports.parseTreeListing = parseTreeListing;
@@ -167,62 +166,6 @@ async function resolveSkill(id, save, opts, install = false) {
     }
     return result;
 }
-/**
- * Resolve SEVERAL references concurrently — composition, which is the shape
- * real messages have.
- *
- * Hosts were resolving a message's references in a `for` loop with an `await`
- * inside, so N cloud references cost N SEQUENTIAL round trips. That is the
- * slowest path on the capability the protocol exists for: a four-reference
- * chain paid four latencies to do work that is entirely independent.
- *
- * Guarantees the sequential loop gave for free, and which callers depend on:
- *   * ORDER — results come back positionally aligned with `ids`, so a caller
- *     can still inject each at its own point of use.
- *   * DEDUP — a repeated id resolves ONCE and its result is shared. Beyond
- *     saving a fetch this matters for correctness: two concurrent `:save`s of
- *     one id would race on the same directory.
- *   * ISOLATION — one failure never rejects the batch. A per-reference failure
- *     is reported in its own slot and the rest of the message survives.
- *
- * Writes stay serialized. `save`/`install` mutate `.atskills/` and
- * `.autotrigger`, and running those concurrently interleaves appends to one
- * file; only the read path is parallelised, which is the part that is slow.
- */
-async function resolveSkills(ids, opts, flags = []) {
-    if (ids.length === 0)
-        return [];
-    const mutates = (i) => Boolean(flags[i]?.save || flags[i]?.install);
-    // One promise per DISTINCT id; repeats await the same one.
-    const inFlight = new Map();
-    const results = new Array(ids.length);
-    // Pure reads first, all at once.
-    await Promise.all(ids.map(async (id, i) => {
-        if (mutates(i))
-            return;
-        let p = inFlight.get(id);
-        if (!p) {
-            p = resolveSkill(id, false, opts, false).catch((e) => ({
-                success: false,
-                error: e instanceof Error ? e.message : String(e),
-            }));
-            inFlight.set(id, p);
-        }
-        results[i] = await p;
-    }));
-    // Then anything that writes, in the order written, one at a time.
-    for (let i = 0; i < ids.length; i++) {
-        if (!mutates(i))
-            continue;
-        try {
-            results[i] = await resolveSkill(ids[i], flags[i]?.save ?? false, opts, flags[i]?.install ?? false);
-        }
-        catch (e) {
-            results[i] = { success: false, error: e instanceof Error ? e.message : String(e) };
-        }
-    }
-    return results.map((r) => r ?? { success: false, error: 'resolution produced no result' });
-}
 /** Local resolution only — used by the resolver and by `/skills` listings. */
 function resolveLocal(skillId, root) {
     let dir;
@@ -297,7 +240,11 @@ async function fetchToDir(skillId, destRoot, opts, source, ref) {
             throw new Error(`Nothing at ${skillId}${ref ? ` at rev ${ref}` : ''}`);
     }
     else {
-        await downloadRegistry(skillId, dest, opts);
+        const visibility = await downloadRegistry(skillId, dest, opts);
+        const described = describeMaterialized(skillId, dest, source);
+        if (visibility && described.origin)
+            described.origin.visibility = visibility;
+        return described;
     }
     return describeMaterialized(skillId, dest, source);
 }
@@ -848,9 +795,14 @@ async function downloadRegistry(skillId, dest, opts) {
             // read, so its existence stays hidden. That means "missing" and "not
             // yours" are the SAME answer here, and the message has to cover both or
             // a signed-out owner is told their own skill does not exist.
+            // Name WHICH registry answered: "not found" usually means the host is
+            // pointed at a different environment (local/staging/prod) than the one
+            // holding the skill, and without the host in the message that reads as
+            // an auth problem — the exact debugging detour it sent a user on.
+            const where = ` in the registry at ${base}`;
             throw new Error(token
-                ? `Skill '${skillId}' not found in the registry.`
-                : `Skill '${skillId}' not found in the registry. ` +
+                ? `Skill '${skillId}' not found${where}.`
+                : `Skill '${skillId}' not found${where}. ` +
                     `If it is private, sign in — a private skill is readable only by the account that owns it.`);
         }
         if (!response.ok)
@@ -861,6 +813,9 @@ async function downloadRegistry(skillId, dest, opts) {
         throw e instanceof Error ? e : new Error(String(e));
     }
     const entry = data?.entry ?? {};
+    // Only meaningful on the response that stated it; a cache hit later cannot
+    // know, and must not guess.
+    const visibility = entry.visibility;
     if (entry.content) {
         // Swap, never write in place: a previous resolution may have left a
         // different body (even a whole GitHub subtree) at this path.
@@ -868,7 +823,7 @@ async function downloadRegistry(skillId, dest, opts) {
         fs.mkdirSync(staging, { recursive: true });
         fs.writeFileSync(path.join(staging, 'SKILL.md'), entry.content, 'utf-8');
         swapIntoPlace(staging, dest);
-        return;
+        return visibility;
     }
     if (entry.github_skill_path) {
         const ghId = entry.github_skill_path.startsWith(ids_js_1.GH_PREFIX)
@@ -877,6 +832,7 @@ async function downloadRegistry(skillId, dest, opts) {
         const ok = await downloadGithub(ghId, dest, opts);
         if (!ok)
             throw new Error(`SKILL.md not found at ${entry.github_skill_path}`);
+        return visibility;
         return;
     }
     throw new Error(`Skill '${skillId}' has no content and no GitHub path`);

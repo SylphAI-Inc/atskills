@@ -76,32 +76,6 @@ export declare function skillsRoot(workingDir: string): string;
  * the ID. It implies nothing about saving: the two suffixes are orthogonal.
  */
 export declare function resolveSkill(id: string, save: boolean, opts: SkillResolverOpts, install?: boolean): Promise<LoadResponse>;
-/**
- * Resolve SEVERAL references concurrently — composition, which is the shape
- * real messages have.
- *
- * Hosts were resolving a message's references in a `for` loop with an `await`
- * inside, so N cloud references cost N SEQUENTIAL round trips. That is the
- * slowest path on the capability the protocol exists for: a four-reference
- * chain paid four latencies to do work that is entirely independent.
- *
- * Guarantees the sequential loop gave for free, and which callers depend on:
- *   * ORDER — results come back positionally aligned with `ids`, so a caller
- *     can still inject each at its own point of use.
- *   * DEDUP — a repeated id resolves ONCE and its result is shared. Beyond
- *     saving a fetch this matters for correctness: two concurrent `:save`s of
- *     one id would race on the same directory.
- *   * ISOLATION — one failure never rejects the batch. A per-reference failure
- *     is reported in its own slot and the rest of the message survives.
- *
- * Writes stay serialized. `save`/`install` mutate `.atskills/` and
- * `.autotrigger`, and running those concurrently interleaves appends to one
- * file; only the read path is parallelised, which is the part that is slow.
- */
-export declare function resolveSkills(ids: string[], opts: SkillResolverOpts, flags?: Array<{
-    save?: boolean;
-    install?: boolean;
-}>): Promise<LoadResponse[]>;
 /** Local resolution only — used by the resolver and by `/skills` listings. */
 export declare function resolveLocal(skillId: string, root: string): LoadResponse | null;
 /**

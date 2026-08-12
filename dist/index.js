@@ -18,7 +18,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildAutotriggerIndex = exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = exports.formatBytes = exports.parseTreeListing = exports.largestUsableCollections = exports.assertCollectionFits = exports.listLocalSkills = exports.skillsRoot = exports.saveSkillToProject = exports.resolveLocal = exports.resolveSkills = exports.resolveSkill = exports.writeSource = exports.writeFileAtomic = exports.walkSkills = exports.safeJoin = exports.pool = exports.nearestSource = exports.listFiles = exports.leafSkillDirs = exports.frontmatter = exports.findAtskills = exports.copyDirSync = exports.bundleEntries = void 0;
+exports.buildAutotriggerIndex = exports.SkillCollectionTooLargeError = exports.DEFAULT_CACHE_DIR = exports.formatBytes = exports.parseTreeListing = exports.largestUsableCollections = exports.assertCollectionFits = exports.listLocalSkills = exports.skillsRoot = exports.saveSkillToProject = exports.resolveLocal = exports.resolveSkill = exports.writeSource = exports.writeFileAtomic = exports.walkSkills = exports.safeJoin = exports.pool = exports.nearestSource = exports.listFiles = exports.leafSkillDirs = exports.frontmatter = exports.findAtskills = exports.copyDirSync = exports.bundleEntries = void 0;
 /**
  * atskills — the @skills protocol core, in TypeScript.
  *
@@ -49,9 +49,10 @@ Object.defineProperty(exports, "writeFileAtomic", { enumerable: true, get: funct
 Object.defineProperty(exports, "writeSource", { enumerable: true, get: function () { return fsx_js_1.writeSource; } });
 __exportStar(require("./autotrigger.js"), exports);
 __exportStar(require("./tree.js"), exports);
+// Composition — how a MESSAGE of references resolves, as opposed to one.
+__exportStar(require("./compose.js"), exports);
 var resolver_js_1 = require("./resolver.js");
 Object.defineProperty(exports, "resolveSkill", { enumerable: true, get: function () { return resolver_js_1.resolveSkill; } });
-Object.defineProperty(exports, "resolveSkills", { enumerable: true, get: function () { return resolver_js_1.resolveSkills; } });
 Object.defineProperty(exports, "resolveLocal", { enumerable: true, get: function () { return resolver_js_1.resolveLocal; } });
 Object.defineProperty(exports, "saveSkillToProject", { enumerable: true, get: function () { return resolver_js_1.saveSkillToProject; } });
 Object.defineProperty(exports, "skillsRoot", { enumerable: true, get: function () { return resolver_js_1.skillsRoot; } });

@@ -20,6 +20,12 @@ export interface OriginInfo {
     githubRepo?: string;
     /** Path of the skill directory inside the repo. */
     githubPath?: string;
+    /**
+     * Hub visibility, when the registry stated it (fresh downloads only —
+     * cache hits do not re-ask). Absent means public or unknown; hosts show
+     * "(private)" only on the explicit value, never infer it.
+     */
+    visibility?: 'private' | 'public';
 }
 /**
  * One child of a resolved skills directory. `path` is the MATERIALIZED local

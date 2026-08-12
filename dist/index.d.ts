@@ -20,5 +20,6 @@ export * from './ids.js';
 export { bundleEntries, copyDirSync, findAtskills, frontmatter, leafSkillDirs, listFiles, nearestSource, pool, safeJoin, walkSkills, writeFileAtomic, writeSource, type Frontmatter, } from './fsx.js';
 export * from './autotrigger.js';
 export * from './tree.js';
-export { resolveSkill, resolveSkills, resolveLocal, saveSkillToProject, skillsRoot, listLocalSkills, assertCollectionFits, largestUsableCollections, parseTreeListing, formatBytes, DEFAULT_CACHE_DIR, SkillCollectionTooLargeError, type SkillResolverOpts, type TreeEntry, } from './resolver.js';
+export * from './compose.js';
+export { resolveSkill, resolveLocal, saveSkillToProject, skillsRoot, listLocalSkills, assertCollectionFits, largestUsableCollections, parseTreeListing, formatBytes, DEFAULT_CACHE_DIR, SkillCollectionTooLargeError, type SkillResolverOpts, type TreeEntry, } from './resolver.js';
 export { buildAutotriggerIndex } from './residency.js';
