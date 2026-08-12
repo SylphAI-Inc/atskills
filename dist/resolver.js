@@ -240,11 +240,7 @@ async function fetchToDir(skillId, destRoot, opts, source, ref) {
             throw new Error(`Nothing at ${skillId}${ref ? ` at rev ${ref}` : ''}`);
     }
     else {
-        const visibility = await downloadRegistry(skillId, dest, opts);
-        const described = describeMaterialized(skillId, dest, source);
-        if (visibility && described.origin)
-            described.origin.visibility = visibility;
-        return described;
+        await downloadRegistry(skillId, dest, opts);
     }
     return describeMaterialized(skillId, dest, source);
 }
@@ -258,6 +254,13 @@ function describeMaterialized(skillId, dest, source) {
     const origin = (0, ids_js_1.isGh)(skillId)
         ? { type: 'github', githubRepo: ghRepoOf(skillId), githubPath: (0, ids_js_1.ghParts)(skillId).sub }
         : { type: 'marketplace', slug: skillId };
+    if (origin.type === 'marketplace') {
+        // The marker survives the download that learned it, so a cache hit an
+        // hour later still knows. Only the explicit value is carried.
+        const visibility = readVisibility(dest);
+        if (visibility)
+            origin.visibility = visibility;
+    }
     // A cloud read carries its review page; a local copy does not — that is
     // project code, read in the editor.
     const review = source === 'local' ? {} : { reviewUrl: (0, ids_js_1.webUrl)(skillId) ?? undefined };
@@ -774,6 +777,33 @@ function swapIntoPlace(staging, dest) {
         fs.rmSync(staging, { recursive: true, force: true });
     }
 }
+/**
+ * The visibility marker: a dotfile beside the cached SKILL.md remembering
+ * what the registry said. Without it only the FIRST resolution could badge a
+ * private skill — every later read is a cache hit that never re-asks, and
+ * "is this private?" is not a fact that should expire with the cache. A
+ * dotfile so listings skip it (listFiles is non-dot by contract). Absent
+ * marker = public or unknown; hosts stay silent.
+ */
+const VISIBILITY_FILE = '.visibility';
+function writeVisibility(dest, visibility) {
+    const file = path.join(dest, VISIBILITY_FILE);
+    if (visibility)
+        fs.writeFileSync(file, visibility + '\n', 'utf-8');
+    // Registry stated nothing: remove a stale marker rather than let a skill
+    // flipped private→public keep its old label.
+    else
+        fs.rmSync(file, { force: true });
+}
+function readVisibility(dest) {
+    try {
+        const raw = fs.readFileSync(path.join(dest, VISIBILITY_FILE), 'utf-8').trim();
+        return raw === 'private' || raw === 'public' ? raw : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 /** Is there a SKILL.md at exactly this path? The one question that decides. */
 /** Resolve a hub/registry ID and materialize it at `dest`. */
 async function downloadRegistry(skillId, dest, opts) {
@@ -823,6 +853,7 @@ async function downloadRegistry(skillId, dest, opts) {
         fs.mkdirSync(staging, { recursive: true });
         fs.writeFileSync(path.join(staging, 'SKILL.md'), entry.content, 'utf-8');
         swapIntoPlace(staging, dest);
+        writeVisibility(dest, visibility);
         return visibility;
     }
     if (entry.github_skill_path) {
@@ -832,6 +863,7 @@ async function downloadRegistry(skillId, dest, opts) {
         const ok = await downloadGithub(ghId, dest, opts);
         if (!ok)
             throw new Error(`SKILL.md not found at ${entry.github_skill_path}`);
+        writeVisibility(dest, visibility);
         return visibility;
         return;
     }
