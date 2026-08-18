@@ -83,3 +83,68 @@ test('gh/ disk spelling folds back to gh: (screenshot bug)', () => {
   assert.equal(normalizeId('gh/anthropics/skills/skills/docx'), 'gh:anthropics/skills/skills/docx');
   assert.equal(diskPath(normalizeId('gh/anthropics/skills/skills/docx')), 'gh/anthropics/skills/skills/docx');
 });
+
+// ── Lenient about spelling, strict about what resolves ─────────────────────
+//
+// A person pasting from the browser address bar is the COMMON case, not the
+// exotic one. Everything below is a real paste we used to mishandle.
+
+test('a pasted GitHub URL after the gh: marker is not read as a scheme', () => {
+  // Regression. `new URL('gh:https://github.com/o/r')` parses `gh:` as the
+  // scheme, leaving `https://github.com/o/r` as the PATH — so this returned
+  // `gh:https:/github.com/o/r`: a well-formed id naming a repo called
+  // `https:`. It produced garbage instead of failing, so nothing caught it.
+  assert.equal(
+    normalizeId('gh:https://github.com/itsmostafa/aws-agent-skills'),
+    'gh:itsmostafa/aws-agent-skills',
+  );
+  assert.equal(
+    normalizeId('gh:github.com/itsmostafa/aws-agent-skills'),
+    'gh:itsmostafa/aws-agent-skills',
+  );
+});
+
+test('every browser spelling of one repo lands on one id', () => {
+  const want = 'gh:vectorize-io/hindsight/skills/hindsight-docs';
+  for (const spelling of [
+    'gh:vectorize-io/hindsight/skills/hindsight-docs',
+    'https://github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs',
+    'https://www.github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs',
+    'github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs',
+    'https://github.com/vectorize-io/hindsight/blob/main/skills/hindsight-docs/SKILL.md',
+    'https://github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs/',
+    'https://github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs?tab=readme-ov-file',
+    'https://github.com/vectorize-io/hindsight/tree/main/skills/hindsight-docs#usage',
+  ]) {
+    assert.equal(normalizeId(spelling), want, `failed for: ${spelling}`);
+  }
+});
+
+test('a .git clone URL names the same repo as the web URL', () => {
+  assert.equal(normalizeId('https://github.com/SylphAI-Inc/skills.git'), 'gh:SylphAI-Inc/skills');
+});
+
+test('only github.com is github.com', () => {
+  // `raw.includes('github.com/')` was true for all of these, so each used to
+  // normalize into a `gh:` id — and git would then clone the ATTACKER's
+  // owner/repo from the real GitHub.
+  for (const host of [
+    'https://evil-github.com/owner/repo',
+    'https://github.com.attacker.net/owner/repo',
+    'https://notgithub.com/owner/repo',
+  ]) {
+    // Rejected outright is the ideal answer; "not a gh: id" is the property
+    // that actually matters. Either is safe, so assert the weaker one and let
+    // the implementation pick.
+    let id = null;
+    try { id = normalizeId(host); } catch { continue; }
+    assert.ok(!isGh(id), `${host} must not become a gh: id, got ${id}`);
+  }
+});
+
+test('leniency stops at the segment: an encoded traversal is still refused', () => {
+  // Decode-then-validate, per segment. Accepting more SPELLINGS must never
+  // mean accepting more PATHS.
+  assert.throws(() => normalizeId('https://github.com/owner/repo/%2E%2E/%2E%2E/etc'), /invalid path segment/);
+  assert.throws(() => normalizeId('gh:owner/repo/..%2Fetc'), /invalid path segment/);
+});

@@ -98,6 +98,27 @@ export interface SkillResolverOpts {
    * is the seam for GitHub Enterprise hosts.
    */
   githubBaseUrl?: string;
+  /**
+   * Catalogue that learns which `gh:` paths people actually reference — the
+   * auto-discovery channel.
+   *
+   * A `gh:` path resolves entirely from git, so nothing ever learns that the
+   * repo exists; a catalogue could only grow by someone submitting a repo by
+   * hand. Set this and each successful `gh:` resolve also announces the path,
+   * so the catalogue grows from real use.
+   *
+   * The guarantee that matters: this NEVER affects resolution. It is started
+   * alongside the git fetch, never awaited, and every failure is swallowed —
+   * offline, 500, DNS gone, wrong URL, all identical to not setting it. The
+   * `gh:` path still resolves with zero involvement from this endpoint, which
+   * is what PROTOCOL.md §"The Hub" promises.
+   *
+   * Separate from `registryBaseUrl` on purpose: that one SERVES skills and a
+   * host may point it anywhere; this one only ever RECEIVES a path. Keeping
+   * them apart means configuring a catalogue cannot accidentally reroute
+   * where skills are read from.
+   */
+  discoveryBaseUrl?: string;
   /** Injected log sink; the package never assumes a host logger. */
   log?: Logger;
 }
@@ -492,7 +513,75 @@ async function downloadGithub(
   if (!(await runGit(['--version']))) {
     throw new Error(`git is required to download ${skillId} — install git and retry`);
   }
+
+  // TWO CALLS, STARTED TOGETHER — git decides the outcome, the catalogue only
+  // listens. `announceDiscovery` is deliberately NOT awaited and never joined
+  // back: the returned promise is the git one alone, so a slow or dead
+  // catalogue cannot add a millisecond to a resolve.
+  announceDiscovery(skillId, opts);
+
   return downloadViaGit(owner, repo, sub, dest, ref, opts.githubBaseUrl ?? GITHUB_GIT_BASE);
+}
+
+/**
+ * Tell the catalogue this `gh:` path was referenced. Fire-and-forget.
+ *
+ * Never fires for a GitHub ENTERPRISE host. `acme-corp/payments-internal` is
+ * a repo name a public catalogue cannot index and has no business learning,
+ * and a host that points `githubBaseUrl` at its own install should not have
+ * to remember to also unset the catalogue to stay private.
+ *
+ * The test is "an http(s) host that is not github.com", not "anything other
+ * than the default": `file://` bases are local fixtures, never an enterprise
+ * install, and excluding them would leave this whole path untestable —
+ * exactly the code that most needs a test.
+ *
+ * Every failure path is silent by design. A resolve that printed "could not
+ * reach the catalogue" would be reporting OUR problem as the user's, in the
+ * middle of work that succeeded.
+ */
+/** A self-hosted GitHub: an http(s) origin that is not github.com itself. */
+function isEnterpriseHost(githubBaseUrl?: string): boolean {
+  if (!githubBaseUrl || githubBaseUrl === GITHUB_GIT_BASE) return false;
+  try {
+    const { protocol, hostname } = new URL(githubBaseUrl);
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
+    const host = hostname.toLowerCase();
+    return host !== 'github.com' && host !== 'www.github.com';
+  } catch {
+    // Unparseable base: treat as not-enterprise. The announce is harmless on
+    // its own, and the git fetch is what will fail loudly.
+    return false;
+  }
+}
+
+function announceDiscovery(skillId: string, opts: SkillResolverOpts): void {
+  const base = opts.discoveryBaseUrl;
+  if (!base) return;
+  if (isEnterpriseHost(opts.githubBaseUrl)) return;
+
+  try {
+    // AbortSignal.timeout, not a bare fetch: without it a catalogue that
+    // accepts the connection and then stalls leaves a socket open for the
+    // life of the process.
+    void fetch(`${base.replace(/\/+$/, '')}/index`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: skillId }),
+      signal: AbortSignal.timeout(5_000),
+    })
+      .then(() => {
+        // Read nothing, report nothing. The answer only interests the
+        // catalogue, and Logger has just info/warn — both of which a user
+        // sees. "Could not reach the catalogue" is OUR problem surfacing in
+        // the middle of work that succeeded, so there is nowhere correct to
+        // put it and it is dropped.
+      })
+      .catch(() => {});
+  } catch {
+    // fetch throws synchronously on a malformed base URL. Same silence: a
+    // misconfigured catalogue must not break a resolve that works.
+  }
 }
 
 /** Run one git command: no prompts, hard timeout, quiet. Resolves ok/failed. */
