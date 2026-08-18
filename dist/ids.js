@@ -123,13 +123,31 @@ exports.SOURCE_FILE = '.source';
  * (the tree/blob + branch pair is spliced out; a trailing SKILL.md drops).
  */
 function fromGithubUrl(raw) {
-    if (!raw.includes('github.com/'))
+    // Strip a `gh:` / `gh/` marker before looking for a URL. People paste the
+    // whole browser address after the prefix (`gh:https://github.com/o/r`), and
+    // without this the URL parser read `gh:` as the SCHEME and the rest as a
+    // path — yielding `gh:https:/github.com/o/r`, a "valid" id pointing at a
+    // repo named `https:`. It failed by producing garbage rather than by
+    // returning null, so nothing caught it.
+    const withoutPrefix = raw.replace(/^\s*gh[:/]/i, '').trim();
+    if (!withoutPrefix.includes('github.com/'))
         return null;
     try {
-        const url = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+        const url = new URL(withoutPrefix.startsWith('http') ? withoutPrefix : `https://${withoutPrefix}`);
+        // Check the HOST, not the string. `github.com/` appears in
+        // `evil-github.com/` and `github.com.attacker.net/`, both of which used to
+        // normalize into a `gh:` id that git would then clone from the real
+        // GitHub under an attacker-chosen owner/repo.
+        const host = url.hostname.toLowerCase();
+        if (host !== 'github.com' && host !== 'www.github.com')
+            return null;
         const seg = url.pathname.split('/').filter(Boolean);
+        // `/tree/<ref>/` and `/blob/<ref>/` are viewer chrome, not path.
         if (seg.length > 3 && (seg[2] === 'tree' || seg[2] === 'blob'))
             seg.splice(2, 2);
+        // A clone URL names the repo `<repo>.git`; the skill path does not.
+        if (seg.length >= 2)
+            seg[1] = seg[1].replace(/\.git$/i, '');
         if (seg[seg.length - 1] === 'SKILL.md')
             seg.pop();
         return seg.length >= 2 ? exports.GH_PREFIX + seg.join('/') : null;

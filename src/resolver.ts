@@ -26,6 +26,8 @@
  */
 
 import { spawn } from 'child_process';
+import * as http from 'http';
+import * as https from 'https';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -98,6 +100,27 @@ export interface SkillResolverOpts {
    * is the seam for GitHub Enterprise hosts.
    */
   githubBaseUrl?: string;
+  /**
+   * Catalogue that learns which `gh:` paths people actually reference — the
+   * auto-discovery channel.
+   *
+   * A `gh:` path resolves entirely from git, so nothing ever learns that the
+   * repo exists; a catalogue could only grow by someone submitting a repo by
+   * hand. Set this and each successful `gh:` resolve also announces the path,
+   * so the catalogue grows from real use.
+   *
+   * The guarantee that matters: this NEVER affects resolution. It is started
+   * alongside the git fetch, never awaited, and every failure is swallowed —
+   * offline, 500, DNS gone, wrong URL, all identical to not setting it. The
+   * `gh:` path still resolves with zero involvement from this endpoint, which
+   * is what PROTOCOL.md §"The Hub" promises.
+   *
+   * Separate from `registryBaseUrl` on purpose: that one SERVES skills and a
+   * host may point it anywhere; this one only ever RECEIVES a path. Keeping
+   * them apart means configuring a catalogue cannot accidentally reroute
+   * where skills are read from.
+   */
+  discoveryBaseUrl?: string;
   /** Injected log sink; the package never assumes a host logger. */
   log?: Logger;
 }
@@ -492,7 +515,101 @@ async function downloadGithub(
   if (!(await runGit(['--version']))) {
     throw new Error(`git is required to download ${skillId} — install git and retry`);
   }
+
+  // TWO CALLS, STARTED TOGETHER — git decides the outcome, the catalogue only
+  // listens. `announceDiscovery` is deliberately NOT awaited and never joined
+  // back: the returned promise is the git one alone, so a slow or dead
+  // catalogue cannot add a millisecond to a resolve.
+  announceDiscovery(skillId, opts);
+
   return downloadViaGit(owner, repo, sub, dest, ref, opts.githubBaseUrl ?? GITHUB_GIT_BASE);
+}
+
+/**
+ * Tell the catalogue this `gh:` path was referenced. Fire-and-forget.
+ *
+ * Never fires for a GitHub ENTERPRISE host. `acme-corp/payments-internal` is
+ * a repo name a public catalogue cannot index and has no business learning,
+ * and a host that points `githubBaseUrl` at its own install should not have
+ * to remember to also unset the catalogue to stay private.
+ *
+ * The test is "an http(s) host that is not github.com", not "anything other
+ * than the default": `file://` bases are local fixtures, never an enterprise
+ * install, and excluding them would leave this whole path untestable —
+ * exactly the code that most needs a test.
+ *
+ * Every failure path is silent by design. A resolve that printed "could not
+ * reach the catalogue" would be reporting OUR problem as the user's, in the
+ * middle of work that succeeded.
+ */
+/** A self-hosted GitHub: an http(s) origin that is not github.com itself. */
+function isEnterpriseHost(githubBaseUrl?: string): boolean {
+  if (!githubBaseUrl || githubBaseUrl === GITHUB_GIT_BASE) return false;
+  try {
+    const { protocol, hostname } = new URL(githubBaseUrl);
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
+    const host = hostname.toLowerCase();
+    return host !== 'github.com' && host !== 'www.github.com';
+  } catch {
+    // Unparseable base: treat as not-enterprise. The announce is harmless on
+    // its own, and the git fetch is what will fail loudly.
+    return false;
+  }
+}
+
+function announceDiscovery(skillId: string, opts: SkillResolverOpts): void {
+  const base = opts.discoveryBaseUrl;
+  if (!base) return;
+  if (isEnterpriseHost(opts.githubBaseUrl)) return;
+
+  try {
+    const url = new URL(`${base.replace(/\/+$/, '')}/index`);
+    const transport = url.protocol === 'https:' ? https : http;
+    const body = JSON.stringify({ reference: skillId });
+
+    const req = transport.request(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      // Drain and discard. Not reading leaves the socket half-open until the
+      // server gives up; the answer itself only interests the catalogue.
+      (res) => res.resume(),
+    );
+
+    // node:http rather than fetch, for THIS line. A CLI resolves a skill and
+    // then exits, and an un-awaited fetch still holds the event loop open
+    // until its socket settles — measured at ~5s of dead air after the work
+    // finished, against a catalogue that accepted the connection and never
+    // answered. The user would read that as the CLI hanging. `unref` lets the
+    // process exit the instant it is otherwise done; if it is still alive,
+    // the request completes normally. fetch exposes no way to do this.
+    req.on('socket', (socket) => {
+      // ORDER MATTERS, and so does doing it twice.
+      //
+      // The timeout arms first because `socket.setTimeout` re-refs the
+      // handle, so unref-ing before it silently undoes the unref. And the
+      // socket gets re-ref'd again when the agent finishes connecting it, so
+      // one call at assignment time is not enough — both were measured as a
+      // live `Socket` handle keeping a finished process alive for 5.17s.
+      //
+      // `req.setTimeout` is NOT used: it arms a standalone timer, and a
+      // pending timer holds the loop open on its own. The socket's timer dies
+      // with the socket.
+      socket.setTimeout(5_000, () => req.destroy());
+      socket.unref();
+      socket.on('connect', () => socket.unref());
+    });
+    // Silence is deliberate. Logger has only info/warn, both of which reach
+    // the user, and "could not reach the catalogue" is OUR problem surfacing
+    // in the middle of work that succeeded.
+    req.on('error', () => {});
+    req.end(body);
+  } catch {
+    // Malformed base URL, and anything else thrown synchronously. A
+    // misconfigured catalogue must not break a resolve that works.
+  }
 }
 
 /** Run one git command: no prompts, hard timeout, quiet. Resolves ok/failed. */

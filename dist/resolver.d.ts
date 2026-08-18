@@ -43,6 +43,27 @@ export interface SkillResolverOpts {
      * is the seam for GitHub Enterprise hosts.
      */
     githubBaseUrl?: string;
+    /**
+     * Catalogue that learns which `gh:` paths people actually reference — the
+     * auto-discovery channel.
+     *
+     * A `gh:` path resolves entirely from git, so nothing ever learns that the
+     * repo exists; a catalogue could only grow by someone submitting a repo by
+     * hand. Set this and each successful `gh:` resolve also announces the path,
+     * so the catalogue grows from real use.
+     *
+     * The guarantee that matters: this NEVER affects resolution. It is started
+     * alongside the git fetch, never awaited, and every failure is swallowed —
+     * offline, 500, DNS gone, wrong URL, all identical to not setting it. The
+     * `gh:` path still resolves with zero involvement from this endpoint, which
+     * is what PROTOCOL.md §"The Hub" promises.
+     *
+     * Separate from `registryBaseUrl` on purpose: that one SERVES skills and a
+     * host may point it anywhere; this one only ever RECEIVES a path. Keeping
+     * them apart means configuring a catalogue cannot accidentally reroute
+     * where skills are read from.
+     */
+    discoveryBaseUrl?: string;
     /** Injected log sink; the package never assumes a host logger. */
     log?: Logger;
 }
