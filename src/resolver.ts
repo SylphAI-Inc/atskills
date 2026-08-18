@@ -26,6 +26,8 @@
  */
 
 import { spawn } from 'child_process';
+import * as http from 'http';
+import * as https from 'https';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -561,25 +563,51 @@ function announceDiscovery(skillId: string, opts: SkillResolverOpts): void {
   if (isEnterpriseHost(opts.githubBaseUrl)) return;
 
   try {
-    // AbortSignal.timeout, not a bare fetch: without it a catalogue that
-    // accepts the connection and then stalls leaves a socket open for the
-    // life of the process.
-    void fetch(`${base.replace(/\/+$/, '')}/index`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reference: skillId }),
-      signal: AbortSignal.timeout(5_000),
-    })
-      .then(() => {
-        // Read nothing, report nothing. The answer only interests the
-        // catalogue, and Logger has just info/warn — both of which a user
-        // sees. "Could not reach the catalogue" is OUR problem surfacing in
-        // the middle of work that succeeded, so there is nowhere correct to
-        // put it and it is dropped.
-      })
-      .catch(() => {});
+    const url = new URL(`${base.replace(/\/+$/, '')}/index`);
+    const transport = url.protocol === 'https:' ? https : http;
+    const body = JSON.stringify({ reference: skillId });
+
+    const req = transport.request(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      // Drain and discard. Not reading leaves the socket half-open until the
+      // server gives up; the answer itself only interests the catalogue.
+      (res) => res.resume(),
+    );
+
+    // node:http rather than fetch, for THIS line. A CLI resolves a skill and
+    // then exits, and an un-awaited fetch still holds the event loop open
+    // until its socket settles — measured at ~5s of dead air after the work
+    // finished, against a catalogue that accepted the connection and never
+    // answered. The user would read that as the CLI hanging. `unref` lets the
+    // process exit the instant it is otherwise done; if it is still alive,
+    // the request completes normally. fetch exposes no way to do this.
+    req.on('socket', (socket) => {
+      // ORDER MATTERS, and so does doing it twice.
+      //
+      // The timeout arms first because `socket.setTimeout` re-refs the
+      // handle, so unref-ing before it silently undoes the unref. And the
+      // socket gets re-ref'd again when the agent finishes connecting it, so
+      // one call at assignment time is not enough — both were measured as a
+      // live `Socket` handle keeping a finished process alive for 5.17s.
+      //
+      // `req.setTimeout` is NOT used: it arms a standalone timer, and a
+      // pending timer holds the loop open on its own. The socket's timer dies
+      // with the socket.
+      socket.setTimeout(5_000, () => req.destroy());
+      socket.unref();
+      socket.on('connect', () => socket.unref());
+    });
+    // Silence is deliberate. Logger has only info/warn, both of which reach
+    // the user, and "could not reach the catalogue" is OUR problem surfacing
+    // in the middle of work that succeeded.
+    req.on('error', () => {});
+    req.end(body);
   } catch {
-    // fetch throws synchronously on a malformed base URL. Same silence: a
+    // Malformed base URL, and anything else thrown synchronously. A
     // misconfigured catalogue must not break a resolve that works.
   }
 }
