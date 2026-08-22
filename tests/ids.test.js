@@ -148,3 +148,37 @@ test('leniency stops at the segment: an encoded traversal is still refused', () 
   assert.throws(() => normalizeId('https://github.com/owner/repo/%2E%2E/%2E%2E/etc'), /invalid path segment/);
   assert.throws(() => normalizeId('gh:owner/repo/..%2Fetc'), /invalid path segment/);
 });
+
+// ── Pasted marketplace URLs (atskills.one) ──
+
+test('a skill page URL is the skill it shows', () => {
+  // The copy block on a page emits `@skills:owner/name`, but the browser bar
+  // holds the URL — and the URL is what people actually paste.
+  for (const spelling of [
+    'https://atskills.one/hardikpandya/stop-slop--2013e8',
+    'https://www.atskills.one/hardikpandya/stop-slop--2013e8',
+    'atskills.one/hardikpandya/stop-slop--2013e8',
+    'https://atskills.one/hardikpandya/stop-slop--2013e8/',
+    'https://atskills.one/hardikpandya/stop-slop--2013e8?utm_source=share',
+    'hub:https://atskills.one/hardikpandya/stop-slop--2013e8',
+  ]) {
+    assert.equal(normalizeId(spelling), 'hub:hardikpandya/stop-slop--2013e8', spelling);
+  }
+});
+
+test('only atskills.one is atskills.one', () => {
+  // Same host discipline as github.com: the HOST decides, not the substring.
+  for (const host of [
+    'https://evil-atskills.one/owner/name',
+    'https://atskills.one.attacker.net/owner/name',
+  ]) {
+    let id = null;
+    try { id = normalizeId(host); } catch { continue; }
+    assert.ok(!id.startsWith('hub:'), `${host} must not become a hub: id, got ${id}`);
+  }
+});
+
+test('a profile URL is not a skill', () => {
+  // `/owner` is a person's page; only owner/name pages name a skill.
+  assert.throws(() => normalizeId('https://atskills.one/hardikpandya'));
+});
