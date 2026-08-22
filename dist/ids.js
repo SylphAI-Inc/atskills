@@ -9,6 +9,7 @@ exports.referenceSpelling = referenceSpelling;
 exports.isCloud = isCloud;
 exports.isLocalOnly = isLocalOnly;
 exports.fromGithubUrl = fromGithubUrl;
+exports.fromHubUrl = fromHubUrl;
 exports.normalizeId = normalizeId;
 exports.isGh = isGh;
 exports.diskPath = diskPath;
@@ -157,6 +158,37 @@ function fromGithubUrl(raw) {
     }
 }
 /**
+ * Accept pasted marketplace URLs, the other address a skill page hands out:
+ * `atskills.one/<owner>/<name>` → `hub:owner/name`. Skill pages show the
+ * reference grammar in their copy block, but the URL in the browser bar is
+ * what people actually share — and it named the same skill while resolving to
+ * nothing.
+ *
+ * Same host discipline as `fromGithubUrl`: the HOST is checked, not the
+ * string, so `evil-atskills.one` and `atskills.one.attacker.net` stay
+ * unrecognized. Only two-segment paths convert — `/owner` is a profile page
+ * and deeper paths do not exist on the hub.
+ */
+function fromHubUrl(raw) {
+    // People paste the whole browser address after the marker too
+    // (`hub:https://atskills.one/o/n`) — strip it before parsing, exactly as
+    // fromGithubUrl strips `gh:`.
+    const withoutPrefix = raw.replace(/^\s*hub[:/]/i, '').trim();
+    if (!/atskills\.one\//i.test(withoutPrefix))
+        return null;
+    try {
+        const url = new URL(withoutPrefix.startsWith('http') ? withoutPrefix : `https://${withoutPrefix}`);
+        const host = url.hostname.toLowerCase();
+        if (host !== 'atskills.one' && host !== 'www.atskills.one')
+            return null;
+        const seg = url.pathname.split('/').filter(Boolean);
+        return seg.length === 2 ? exports.HUB_PREFIX + seg.join('/') : null;
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * Normalize any accepted spelling to the canonical ID. Throws on an empty
  * path, a `gh:` address shorter than owner/repo, or any segment that could
  * escape the skills tree.
@@ -167,7 +199,7 @@ function normalizeId(raw) {
         throw new Error('empty skill path');
     if (id.includes('\\'))
         throw new Error(`invalid skill path: ${raw}`);
-    const fromUrl = fromGithubUrl(id);
+    const fromUrl = fromGithubUrl(id) ?? fromHubUrl(id);
     if (fromUrl)
         id = fromUrl;
     // `gh/` is the DISK spelling of `gh:` — fold it back, so a vendored path

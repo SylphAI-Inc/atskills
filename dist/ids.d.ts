@@ -37,6 +37,19 @@ export declare const SOURCE_FILE = ".source";
  */
 export declare function fromGithubUrl(raw: string): string | null;
 /**
+ * Accept pasted marketplace URLs, the other address a skill page hands out:
+ * `atskills.one/<owner>/<name>` → `hub:owner/name`. Skill pages show the
+ * reference grammar in their copy block, but the URL in the browser bar is
+ * what people actually share — and it named the same skill while resolving to
+ * nothing.
+ *
+ * Same host discipline as `fromGithubUrl`: the HOST is checked, not the
+ * string, so `evil-atskills.one` and `atskills.one.attacker.net` stay
+ * unrecognized. Only two-segment paths convert — `/owner` is a profile page
+ * and deeper paths do not exist on the hub.
+ */
+export declare function fromHubUrl(raw: string): string | null;
+/**
  * Normalize any accepted spelling to the canonical ID. Throws on an empty
  * path, a `gh:` address shorter than owner/repo, or any segment that could
  * escape the skills tree.
